@@ -1,0 +1,41 @@
+# virtual environment
+.venv/
+venv/
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# secrets and local config (keep a template if one is added)
+.env
+.env.*
+!.env.example
+ngrok.yml
+
+# downloaded scenes and generated outputs (large, licensed)
+data/
+cache/
+outputs/
+workdir/
+*.zip
+*.tif
+*.tiff
+*.tmp
+
+# logs
+*.log
+
+# editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.claude/
+
+# docs for claude / assignment
+Mid-Sem_practical.docx
+CLAUDE.md
