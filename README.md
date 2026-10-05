@@ -2,7 +2,13 @@
 
 CyberGIS mid-sem assignment. An **OGC Web Processing Service (WPS 1.0.0, PyWPS)** that computes NDVI for any
 bounding box from Resourcesat-2 LISS-III scenes published on [Bhoonidhi](https://bhoonidhi.nrsc.gov.in), instead of
-making the user download a whole scene and compute it by hand.
+making the user download a whole scene and compute it by hand. It offers NDVI, NDWI, MNDWI and NDBI.
+
+**Live endpoint:** `https://triangle-overpass-flirt.ngrok-free.dev/wps`
+([landing page](https://triangle-overpass-flirt.ngrok-free.dev/), [GetCapabilities](https://triangle-overpass-flirt.ngrok-free.dev/wps?service=WPS&request=GetCapabilities)).
+It runs on the author's machine behind an ngrok tunnel, so it is up only while that machine is running and the
+address changes if the tunnel is restarted; see [docs/DEMO.md](docs/DEMO.md). The public instance serves the cached
+Hyderabad area only (section 5). Everything below can also be run locally (section 4).
 
 ## 1. The gap
 
@@ -195,7 +201,9 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   the 99th percentile of NDWI/MNDWI and the 1st percentile of NDVI/NDBI in the window (checked by an automated test, which
   also confirms band wiring and geolocation). Do not apply "NDWI > 0 means water" until reflectance is available.
 - Four indices; SAVI and EVI are not offered (see Processes).
-- Not independently validated against a reference NDVI product.
+- Not independently validated against a reference NDVI product. Manual checks done by the author: the GeoTIFF output
+  loads in QGIS over central Hyderabad with the expected CRS and layout, and the public URL answers from a phone on
+  mobile data. The automated lake test is a relative check only.
 
 ## 6. Data and attribution
 Contains data from Resourcesat-2 LISS-III, **ISRO-IRS**, distributed through Bhoonidhi (NRSC/ISRO). Scenes are not
