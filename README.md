@@ -113,8 +113,9 @@ curl "http://localhost:5000/wps?service=WPS&version=1.0.0&request=Execute&identi
 # asynchronous Execute: returns ProcessAccepted + statusLocation; poll that URL for ProcessSucceeded
 curl "http://localhost:5000/wps?service=WPS&version=1.0.0&request=Execute&identifier=ndvi&DataInputs=bbox=17.35,78.40,17.45,78.55,urn:ogc:def:crs:EPSG::4326&storeExecuteResponse=true&status=true"
 ```
-Python client: `python scripts/owslib_check.py [wps_url]` drives all operations with OWSLib. In QGIS use the
-Processing Toolbox WPS client (or any WPS 1.0.0 client) with the same URL.
+Python client: `python scripts/owslib_check.py [wps_url]` drives all operations with OWSLib (tested). Results are
+ordinary Cloud Optimized GeoTIFFs and load in QGIS as raster layers (Layer > Add Raster Layer, local file or URL).
+QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1.0.0 client should work with the same URL.
 
 ### Conformance verification
 - **Schema validation.** Responses are validated against the official OGC WPS 1.0.0 and OWS 1.1 XSDs (vendored in

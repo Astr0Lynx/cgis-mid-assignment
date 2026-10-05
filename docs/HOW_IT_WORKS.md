@@ -6,7 +6,7 @@ A guide to what is running, why, and how to operate it. No prior Docker, WPS or 
 ## 1. The big picture
 
 ```
- Someone (QGIS, a script, a browser)
+ Someone (a script, a WPS client, a browser)
         |   HTTPS request:  "give me NDVI for this box"
         v
  +---------------+      +--------------------------------------------------+
@@ -33,7 +33,7 @@ A guide to what is running, why, and how to operate it. No prior Docker, WPS or 
 |---|---|
 | **WPS** (Web Processing Service) | An OGC standard for "run a computation over HTTP". A client can ask what the service offers (*GetCapabilities*), how to call one thing (*DescribeProcess*), and then run it (*Execute*). |
 | **Process** | One computation the service offers. We have one: `ndvi`. |
-| **KVP vs XML POST** | Two ways to send the same request. KVP puts everything in the URL (`?service=WPS&request=Execute&...`), easy to paste in a browser. XML POST sends an XML document in the body; QGIS and OWSLib use this. Both work. |
+| **KVP vs XML POST** | Two ways to send the same request. KVP puts everything in the URL (`?service=WPS&request=Execute&...`), easy to paste in a browser. XML POST sends an XML document in the body; OWSLib uses this. Both work. |
 | **Synchronous / asynchronous** | Sync: you wait and get the answer in the reply. Async (`storeExecuteResponse=true&status=true`): you immediately get a *status URL*, and poll it until it says `ProcessSucceeded`. |
 | **Reference vs raw** | By default the reply is an XML document containing a *link* to the result file (reference). `RawDataOutput=ndvi` skips the XML and returns the file itself. |
 | **Lineage** | `lineage=true` makes the XML reply also echo back the inputs you sent and the outputs you asked for, so a saved reply is self-describing. |
