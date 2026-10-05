@@ -1,0 +1,6 @@
+{
+  "_readme": "Mean solar exo-atmospheric irradiance (ESUN) per Resourcesat-2 LISS-III band, in mW/cm2/um (same units as the radiance from BAND_META.txt Lmin/Lmax). Fill in `bands` and `source` from a citable publication, e.g. Pandya et al. 2013, 'Quantification and comparison of spectral characteristics of sensors on board Resourcesat-1 and Resourcesat-2 satellites', Remote Sensing Letters 4(3), doi:10.1080/2150704X.2012.727491 (not freely accessible; values were NOT found in any open source checked). Check the units in that table: if given in W/m2/um, divide by 10 to get mW/cm2/um. TOA reflectance stays disabled (radiometry=toa is refused) until every band has a value AND `source` is set. Do not enter values from memory.",
+  "source": null,
+  "units": "mW/cm2/um",
+  "bands": {"2": null, "3": null, "4": null, "5": null}
+}
