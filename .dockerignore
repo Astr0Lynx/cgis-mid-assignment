@@ -5,3 +5,4 @@ workdir
 .git
 __pycache__
 *.docx
+state
