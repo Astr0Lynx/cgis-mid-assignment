@@ -64,10 +64,15 @@ class Scene:
             transform = ds.window_transform(window)
         return to_physical(dn, self.meta, BAND_NUMBERS[band], mode), transform
 
+    def index(self, bbox, name: str, mode: str = "radiance") -> Clip:
+        """Clip the bbox and compute the named spectral index (see app.indices.INDICES)."""
+        bands, transform = {}, None
+        for band in indices.INDICES[name].bands:
+            bands[band], transform = self.read_clip(band, bbox, mode)
+        return Clip(indices.compute(name, bands), transform, self.crs, self.scene_id, self.date)
+
     def ndvi(self, bbox, mode: str = "radiance") -> Clip:
-        nir, transform = self.read_clip("nir", bbox, mode)
-        red, _ = self.read_clip("red", bbox, mode)
-        return Clip(indices.ndvi(nir, red), transform, self.crs, self.scene_id, self.date)
+        return self.index(bbox, "ndvi", mode)
 
 
 def find_scenes(bbox, data_dir: Path = DATA_DIR, min_valid: float = 0.95) -> list[Scene]:

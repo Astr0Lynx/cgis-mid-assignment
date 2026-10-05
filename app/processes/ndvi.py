@@ -1,18 +1,26 @@
-"""WPS process: on-demand NDVI from Bhoonidhi Resourcesat LISS-III scenes."""
+"""WPS processes: on-demand spectral indices from Bhoonidhi Resourcesat LISS-III scenes.
+
+Two processes share one implementation (`IndexProcess`):
+  ndvi            fixed index, output identifier `ndvi` (the headline process)
+  spectral-index  the caller picks the index (ndvi, ndwi, mndwi, ndbi), output identifier `index`
+"""
 import json
 import math
 import os
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 from pywps import BoundingBoxInput, ComplexOutput, Format, LiteralInput, Process
 from pywps.app.exceptions import ProcessError
+from pywps.inout.literaltypes import AnyValue
 
+from app.indices import INDICES
+from app.radiometry import MODES, EsunNotConfigured
 from app.scene import find_scenes, write_cog
 
 GEOTIFF = Format("image/tiff; subtype=geotiff", extension=".tif")
 JSON = Format("application/json", extension=".json")
-
 
 MAX_PIXELS = int(os.environ.get("MAX_PIXELS", 16_000_000))  # keeps memory bounded (~100 MB per float32 band)
 
@@ -25,8 +33,28 @@ def _approx_pixels(bbox, resolution_m: float = 24.0) -> float:
     return width_m * height_m / resolution_m ** 2
 
 
-class Ndvi(Process):
-    def __init__(self):
+class NamedComplexOutput(ComplexOutput):
+    """ComplexOutput whose file is named after its identifier (PyWPS would call it "input.tif").
+
+    Outputs are handed to PyWPS as in-memory bytes, not as a path: PyWPS deletes the process working
+    directory before it reads a file-backed output for `RawDataOutput`, so a path gives a 500 there.
+    PyWPS writes the bytes to a file itself when a stored/reference response is needed, using this name.
+    """
+
+    def _build_file_name(self, href=""):
+        # fixed name (no PyWPS "_xxxx" de-duplication suffix); the same bytes are written either way
+        return os.path.join(self.workdir, f"{self.identifier}{self.extension}")
+
+
+class IndexProcess(Process):
+    """Clip the bbox from the best scene and compute a normalised-difference index.
+
+    fixed_index: name from INDICES to bake into the process, or None to let the caller choose via an `index` input.
+    """
+
+    def __init__(self, identifier: str, title: str, fixed_index: str | None, output_id: str):
+        self.fixed_index = fixed_index
+        self.output_id = output_id
         inputs = [
             BoundingBoxInput(
                 "bbox", "Area of interest",
@@ -35,25 +63,53 @@ class Ndvi(Process):
             ),
             LiteralInput(
                 "date", "Acquisition date", data_type="string", min_occurs=0, max_occurs=1,
+                allowed_values=[AnyValue()],  # WPS 1.0.0 schema requires an explicit AnyValue/AllowedValues
                 abstract="ISO date (YYYY-MM-DD) of the scene to use. Defaults to the newest scene covering the bbox.",
             ),
+            LiteralInput(
+                "radiometry", "Radiometric quantity", data_type="string", min_occurs=0, max_occurs=1,
+                allowed_values=list(MODES), default="radiance",
+                abstract=(
+                    "radiance (default): at-sensor radiance. Band-dependent solar irradiance is not removed, so "
+                    "index values are biased and standard thresholds (for example NDWI > 0 for water) do not "
+                    "strictly apply. toa: top-of-atmosphere reflectance (needs a cited per-band solar irradiance "
+                    "table; refused with an explanatory error until one is configured). Neither removes "
+                    "atmospheric effects."
+                ),
+            ),
         ]
+        if fixed_index is None:
+            inputs.insert(1, LiteralInput(
+                "index", "Spectral index", data_type="string", min_occurs=1, max_occurs=1,
+                allowed_values=list(INDICES),
+                abstract="; ".join(f"{i.name}: {i.formula} ({i.meaning})" for i in INDICES.values()),
+            ))
+            abstract = (
+                "Computes a normalised-difference spectral index (" + ", ".join(INDICES) + ") for a bounding box from "
+                "Resourcesat-2 LISS-III scenes published on Bhoonidhi (ISRO/NRSC). Bands: B2 green, B3 red, B4 NIR, "
+                "B5 SWIR. Uses at-sensor radiance unless radiometry=toa is configured."
+            )
+            out_title = "Spectral index raster"
+        else:
+            idx = INDICES[fixed_index]
+            abstract = (
+                f"Computes the {idx.title} {idx.formula} for a bounding box from Resourcesat-2 LISS-III scenes "
+                "published on Bhoonidhi (ISRO/NRSC). Uses at-sensor radiance unless radiometry=toa is configured "
+                "(no atmospheric correction)."
+            )
+            out_title = f"{fixed_index.upper()} raster"
         outputs = [
-            ComplexOutput("ndvi", "NDVI raster", supported_formats=[GEOTIFF], as_reference=True,
-                          abstract="Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS."),
-            ComplexOutput("stats", "NDVI statistics", supported_formats=[JSON],
-                          abstract="Scene id, acquisition date, and min/mean/max/valid fraction of the output."),
+            NamedComplexOutput(output_id, out_title, supported_formats=[GEOTIFF], as_reference=True,
+                               abstract="Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS."),
+            ComplexOutput("stats", "Index statistics", supported_formats=[JSON],
+                          abstract="Index, scene id, acquisition date, and min/mean/max/valid fraction of the output."),
         ]
         super().__init__(
             self._handler,
-            identifier="ndvi",
-            title="NDVI from Bhoonidhi LISS-III",
-            abstract=(
-                "Computes the Normalised Difference Vegetation Index for a bounding box from "
-                "Resourcesat-2 LISS-III scenes published on Bhoonidhi (ISRO/NRSC). "
-                "v1 uses at-sensor radiance (no atmospheric or solar-irradiance correction)."
-            ),
-            keywords=["NDVI", "Bhoonidhi", "Resourcesat", "LISS-III"],
+            identifier=identifier,
+            title=title,
+            abstract=abstract,
+            version="1.0.0",  # no keywords: WPS 1.0.0 schemas do not allow ows:Keywords in process descriptions
             inputs=inputs, outputs=outputs,
             store_supported=True, status_supported=True,
         )
@@ -72,6 +128,11 @@ class Ndvi(Process):
                 f"(roughly {MAX_PIXELS ** 0.5 * 24 / 1000:.0f} x {MAX_PIXELS ** 0.5 * 24 / 1000:.0f} km)"
             )
 
+        name = self.fixed_index or request.inputs["index"][0].data
+        if name not in INDICES:  # PyWPS already enforces allowed_values; this guards direct calls
+            raise ProcessError(f"Unknown index {name!r}; available: {', '.join(INDICES)}")
+        mode = request.inputs["radiometry"][0].data if "radiometry" in request.inputs else "radiance"
+
         response.update_status("Searching scenes", 10)
         scenes = find_scenes(bbox)
         if "date" in request.inputs:
@@ -84,19 +145,37 @@ class Ndvi(Process):
         if not scenes:
             raise ProcessError("No available scene fully covers this bbox (and date, if given)")
 
-        response.update_status("Computing NDVI", 40)
-        clip = scenes[0].ndvi(bbox)
-        out = write_cog(clip, f"{self.workdir}/ndvi.tif")
+        response.update_status(f"Computing {name.upper()}", 40)
+        try:
+            clip = scenes[0].index(bbox, name, mode)
+        except EsunNotConfigured as e:
+            raise ProcessError(str(e))
+        out = write_cog(clip, f"{self.workdir}/{self.output_id}.tif")
         valid = clip.data[np.isfinite(clip.data)]
+        if valid.size == 0:
+            raise ProcessError("The selected scene has no valid pixels in this bbox")
         stats = {
+            "index": name,
+            "formula": INDICES[name].formula,
             "scene_id": clip.scene_id,
             "date": clip.date.date().isoformat(),
             "bbox_lonlat": list(bbox),
             "shape": list(clip.data.shape),
             "min": float(valid.min()), "mean": float(valid.mean()), "max": float(valid.max()),
             "valid_fraction": float(valid.size / clip.data.size),
-            "radiometry": "radiance",
+            "radiometry": mode,
         }
-        response.outputs["ndvi"].file = str(out)
+        response.outputs[self.output_id].data = Path(out).read_bytes()
         response.outputs["stats"].data = json.dumps(stats)
         return response
+
+
+class Ndvi(IndexProcess):
+    def __init__(self):
+        super().__init__("ndvi", "NDVI from Bhoonidhi LISS-III", fixed_index="ndvi", output_id="ndvi")
+
+
+class SpectralIndex(IndexProcess):
+    def __init__(self):
+        super().__init__("spectral-index", "Spectral indices from Bhoonidhi LISS-III", fixed_index=None,
+                         output_id="index")
