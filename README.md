@@ -55,16 +55,47 @@ Endpoint (local): `http://localhost:5000/wps`
 | `DescribeProcess` | yes |
 | `Execute` | yes: KVP (GET) and XML (POST), synchronous and asynchronous (`storeExecuteResponse=true&status=true`) |
 
-### Process `ndvi`
+### Processes
+| Identifier | What it does |
+|---|---|
+| `ndvi` | NDVI for a bbox (the headline process). Output `ndvi`. |
+| `spectral-index` | Same pipeline with a required `index` input: `ndvi`, `ndwi`, `mndwi` or `ndbi`. Output `index`. |
+
+Both take the same other inputs and return the same two outputs (a GeoTIFF and a stats JSON). Indices (LISS-III bands:
+B2 green, B3 red, B4 NIR, B5 SWIR), each a normalised difference `(a-b)/(a+b)`:
+
+| `index` | Formula | Highlights |
+|---|---|---|
+| `ndvi` | (nir-red)/(nir+red) | vegetation vigour |
+| `ndwi` | (green-nir)/(green+nir) | open water (McFeeters) |
+| `mndwi` | (green-swir)/(green+swir) | water vs built-up (Xu) |
+| `ndbi` | (swir-nir)/(swir+nir) | built-up land |
+
+Not offered: **EVI** (needs a Blue band, which LISS-III lacks) and **SAVI** (its soil constant 0.5 is defined for
+reflectance and is meaningless on radiance; it waits for TOA reflectance).
+
+### Process `ndvi` (inputs and outputs; `spectral-index` adds an `index` input and names its output `index`)
 | | Identifier | Type | Notes |
 |---|---|---|---|
 | Input | `bbox` | BoundingBox, `EPSG:4326` | OGC axis order for EPSG:4326: `miny,minx,maxy,maxx` (lat,lon). Required. |
 | Input | `date` | Literal (string) | `YYYY-MM-DD`. Optional; default is the newest scene that fully covers the bbox. |
+| Input | `radiometry` | Literal, `radiance` \| `toa` | Optional, default `radiance`. `toa` = top-of-atmosphere reflectance; it is implemented but **refused with an explanatory error until a cited per-band solar-irradiance (ESUN) table is configured** (see section 5). |
 | Output | `ndvi` | Complex, `image/tiff; subtype=geotiff` | Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS. Returned by reference. |
 | Output | `stats` | Complex, `application/json` | scene id, date, bbox, shape, min/mean/max, valid fraction, radiometry mode. |
 
 Errors are returned as proper OGC `ExceptionReport`s (unknown process, invalid or inverted bbox, bbox over the size
 limit, bad date, no scene covering the request).
+
+### Response options
+| Option (KVP / XML) | Effect |
+|---|---|
+| default | XML `ExecuteResponse` with a link to the GeoTIFF and the stats JSON inline |
+| `RawDataOutput=ndvi` / `<wps:RawDataOutput>` | Returns the GeoTIFF itself (`image/tiff; subtype=geotiff`), no XML |
+| `RawDataOutput=stats` | Returns the statistics JSON itself (`application/json`) |
+| `ResponseDocument=ndvi@asReference=true` | Choose which outputs appear, and whether as a link |
+| `lineage=true` / `lineage="true"` | The response also echoes the inputs received and the outputs requested |
+| `storeExecuteResponse=true&status=true` | Asynchronous: immediate `ProcessAccepted` + status URL to poll |
+| unknown output name | OGC `ExceptionReport` (`InvalidParameterValue`, HTTP 400) listing the valid names |
 
 ### Examples
 ```bash
@@ -75,11 +106,28 @@ curl "http://localhost:5000/wps?service=WPS&version=1.0.0&request=DescribeProces
 # synchronous Execute (central Hyderabad, ~10 x 15 km)
 curl "http://localhost:5000/wps?service=WPS&version=1.0.0&request=Execute&identifier=ndvi&DataInputs=bbox=17.35,78.40,17.45,78.55,urn:ogc:def:crs:EPSG::4326"
 
+# raw GeoTIFF straight to a file, and raw statistics
+curl -o ndvi.tif "http://localhost:5000/wps?service=WPS&version=1.0.0&request=Execute&identifier=ndvi&DataInputs=bbox=17.35,78.40,17.45,78.55,urn:ogc:def:crs:EPSG::4326&RawDataOutput=ndvi"
+curl "http://localhost:5000/wps?service=WPS&version=1.0.0&request=Execute&identifier=ndvi&DataInputs=bbox=17.35,78.40,17.45,78.55,urn:ogc:def:crs:EPSG::4326&RawDataOutput=stats"
+
 # asynchronous Execute: returns ProcessAccepted + statusLocation; poll that URL for ProcessSucceeded
 curl "http://localhost:5000/wps?service=WPS&version=1.0.0&request=Execute&identifier=ndvi&DataInputs=bbox=17.35,78.40,17.45,78.55,urn:ogc:def:crs:EPSG::4326&storeExecuteResponse=true&status=true"
 ```
 Python client: `python scripts/owslib_check.py [wps_url]` drives all operations with OWSLib. In QGIS use the
 Processing Toolbox WPS client (or any WPS 1.0.0 client) with the same URL.
+
+### Conformance verification
+- **Schema validation.** Responses are validated against the official OGC WPS 1.0.0 and OWS 1.1 XSDs (vendored in
+  `tests/schemas/`): GetCapabilities, DescribeProcess, synchronous Execute, `ExceptionReport`, the asynchronous
+  `ProcessAccepted` response and the final `ProcessSucceeded` / `ProcessFailed` status documents.
+  `pytest tests/test_schema.py` covers the synchronous documents; `python scripts/validate_schema.py [wps_url]`
+  runs the full asynchronous lifecycle against a running server.
+- **Independent client.** `python scripts/owslib_check.py [wps_url]` drives GetCapabilities, DescribeProcess and an
+  asynchronous Execute with status polling through OWSLib.
+- The suite found several places where PyWPS 4.8 violates the schemas or the OGC axis-order convention; these are
+  fixed in `app/pywps_compat.py` (see section 3). The response options below (`lineage`, `RawDataOutput`,
+  `ResponseDocument`) are tested too, over both KVP and XML POST. Not covered: WPS 2.0, `Reference` inputs, and
+  every possible request variant.
 
 ## 3. Design and implementation choices
 - **PyWPS 4.8 on Flask + gunicorn, in Docker.** PyWPS asynchronous execution uses `multiprocessing` and does not work
@@ -95,8 +143,18 @@ Processing Toolbox WPS client (or any WPS 1.0.0 client) with the same URL.
   the same folder layout (`BAND2..5.tif` + `BAND_META.txt`) with small compressed COG bands of the *original* DN values;
   NDVI from the cache is bit-identical to NDVI from the full scene. `scripts/build_cache.py` builds it from scenes you
   downloaded yourself; the public image contains only this cache (~38 MB for both scenes) and no credentials.
-- **Axis order.** PyWPS 4.8 delivers XML-POST bounding boxes as lon,lat but KVP as lat,lon. `app/pywps_compat.py`
-  makes both follow the OGC convention; regression tests cover it.
+- **PyWPS conformance fixes** (`app/pywps_compat.py`, applied at import so they survive reinstalls):
+  - Axis order: PyWPS 4.8 delivers XML-POST bounding boxes as lon,lat but KVP as lat,lon. Both now follow the OGC
+    convention (lat,lon for EPSG:4326); regression tests cover both encodings.
+  - A failed process was reported as `wps:ExceptionReport` (the schema requires `ows:ExceptionReport` with a `version`
+    attribute), and `ProcessAccepted` carried a `percentCompleted` attribute the schema does not allow.
+  - `serviceInstance` was double-escaped (`&amp;amp;`), advertising a wrong URL.
+  - Process keywords and an input without an `AnyValue` also made capabilities/DescribeProcess schema-invalid; fixed in
+    the process definition.
+- **Shared job database.** PyWPS tracks running async jobs in a database that defaults to `sqlite:///:memory:`, which is
+  private to each process. Async jobs run in forked children, so the server never saw them finish and, after
+  `parallelprocesses` (2) jobs, queued every new async job forever. `app/server.py` points it at a file database
+  (reset at start-up; one gunicorn worker).
 - **Strict MIME type** `image/tiff; subtype=geotiff` on the output, and `/outputs/` is served statically so async
   status documents and results are reachable.
 - **Bounded cost:** requests above 16 Mpixel (~96 x 96 km at 24 m, `MAX_PIXELS`) are rejected.
@@ -113,11 +171,15 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 # behind a tunnel, tell the service its public URL so status/output links are correct:
 #   docker run -p 5000:5000 -e PUBLIC_BASE_URL=https://<your-tunnel> bhoonidhi-wps
 ```
+A step-by-step live demo script: **[docs/DEMO.md](docs/DEMO.md)**.
+
+How the pieces fit together, Docker/ngrok basics and troubleshooting: **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**.
+
 Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `data/` is empty).
 `scripts/inspect_scene.py <scene folder or zip>` prints tif header metadata.
 
 ## 5. Known limitations
-- **Radiance, not reflectance (v1).** Indices use at-sensor radiance. Without a solar-irradiance correction the NDVI is
+- **Radiance by default; TOA reflectance is built but disabled.** `radiometry=toa` is implemented (formula from NRSC's own surface-reflectance guide, tested against hand calculations) but needs the per-band solar irradiance, and I could not find a citable open source for the LISS-III values, so I did not guess them: the service refuses `toa` until `app/esun_liss3.json` is filled from a publication. Indices use at-sensor radiance. Without a solar-irradiance correction the NDVI is
   biased low (red solar irradiance exceeds NIR); the Hyderabad 23 May clip has a median NDVI of about -0.05. Treat values
   as relative. TOA reflectance is the next planned change (`later.md`). The priced BOA surface-reflectance product is the
   proper alternative.
@@ -126,7 +188,12 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   because it would act on a personal Bhoonidhi account and its download quota.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
   time-series; the two scenes use different UTM zones so combining them would need reprojection.
-- Only NDVI so far; further indices are planned after the radiometry fix.
+- **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
+  (Hyderabad, 23 May): every pixel has a positive MNDWI (minimum 0.61) and the median NDBI is -0.66, because the SWIR
+  band's radiance range is tiny next to green's. The indices do pick out the right places: Hussain Sagar lake sits at
+  the 99th percentile of NDWI/MNDWI and the 1st percentile of NDVI/NDBI in the window (checked by an automated test, which
+  also confirms band wiring and geolocation). Do not apply "NDWI > 0 means water" until reflectance is available.
+- Four indices; SAVI and EVI are not offered (see Processes).
 - Not independently validated against a reference NDVI product.
 
 ## 6. Data and attribution
@@ -137,8 +204,9 @@ publishing derived products beyond this coursework.
 ## 7. Repository layout
 ```
 app/            service code (radiometry, indices, scene clipping, WPS process, Flask server)
-scripts/        inspect_scene.py, build_cache.py, owslib_check.py
-tests/          unit tests and WPS protocol tests
+scripts/        inspect_scene.py, build_cache.py, owslib_check.py, validate_schema.py
+tests/          unit, WPS protocol and schema-validation tests (tests/schemas = official OGC XSDs)
+docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (live demo script)
 Dockerfile, pywps.cfg, requirements.txt
 later.md        deferred work and priorities
 ```
