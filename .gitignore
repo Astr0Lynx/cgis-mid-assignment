@@ -24,6 +24,7 @@ workdir/
 *.zip
 *.tif
 *.tiff
+*.aux.xml
 *.tmp
 
 # logs
