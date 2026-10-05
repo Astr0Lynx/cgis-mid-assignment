@@ -1,4 +1,9 @@
-"""Make XML-POST and KVP bounding boxes arrive in the same axis order.
+"""Fixes for PyWPS 4.8 behaviours that break OGC conformance.
+
+1. Bounding-box axis order (XML POST vs KVP).
+2. Failed-execution template (see `_PatchedLoader`).
+
+--- 1. Make XML-POST and KVP bounding boxes arrive in the same axis order.
 
 PyWPS 4.8 passes KVP bbox values through untouched (OGC order: lat,lon for EPSG:4326),
 but for XML POST it parses LowerCorner/UpperCorner through OWSLib, which swaps them to
@@ -38,3 +43,43 @@ def get_inputs_from_xml(doc):
 
 
 _wpsrequest.get_inputs_from_xml = get_inputs_from_xml
+
+
+# --- 2. Execute response template -------------------------------------------------------
+# PyWPS 4.8's execute/main.xml (a) wraps the error of a failed process in <wps:ExceptionReport>,
+# but the WPS 1.0.0 schema requires <ows:ExceptionReport>, and (b) HTML-escapes serviceInstance,
+# which PyWPS already escaped, producing "&amp;amp;" so the advertised URL is wrong.
+# Patch the template text as it is loaded, so this survives reinstalls and Docker rebuilds.
+from jinja2 import PackageLoader  # noqa: E402
+
+_response_basic = importlib.import_module("pywps.response.basic")
+
+
+# (text in PyWPS's execute/main.xml, replacement). Each pair fixes one schema violation.
+_EXECUTE_TEMPLATE_FIXES = [
+    # failed process: the error must be an ows:ExceptionReport with a version attribute
+    ("<wps:ExceptionReport>", '<ows:ExceptionReport version="1.0.0">'),
+    ("</wps:ExceptionReport>", "</ows:ExceptionReport>"),
+    (' locator="None"', ""),
+    # only ProcessStarted/Paused carry percentCompleted in the 1.0.0 schema
+    ('<wps:ProcessAccepted percentCompleted="{{ status.percent_done }}">', "<wps:ProcessAccepted>"),
+    # do not escape serviceInstance a second time
+    ("{{ service_instance }}", "{{ service_instance|safe }}"),
+    # lineage echo: xs:boolean needs lowercase true/false
+    ('asReference="{{ output.asreference }}"', """asReference="{{ 'true' if output.asreference else 'false' }}\""""),
+    # lineage echo of a KVP bbox carries no crs/dimensions (printed as "None"); only EPSG:4326 2-D is supported
+    ('<wps:BoundingBoxData crs="{{ input.crs }}" dimensions="{{ input.dimensions }}">',
+     """<wps:BoundingBoxData crs="{{ input.crs or 'urn:ogc:def:crs:EPSG::4326' }}" dimensions="{{ input.dimensions or 2 }}">"""),
+]
+
+
+class _PatchedLoader(PackageLoader):
+    def get_source(self, environment, template):
+        source, filename, uptodate = super().get_source(environment, template)
+        if template.endswith("execute/main.xml"):
+            for old, new in _EXECUTE_TEMPLATE_FIXES:
+                source = source.replace(old, new)
+        return source, filename, uptodate
+
+
+_response_basic.PackageLoader = _PatchedLoader
