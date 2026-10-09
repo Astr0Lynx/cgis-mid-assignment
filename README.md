@@ -195,8 +195,12 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   the ESUN values. Treat values as relative. The priced BOA surface-reflectance product is the proper alternative.
 - **Public instance serves only the cached area and scenes** (Hyderabad, 18 and 23 May 2026; the 18 May scene covers only the western part of the city centre, so
   most requests resolve to 23 May); anything else returns a
-  clean "no scene covers this request" exception. Live fetching from Bhoonidhi is deliberately not exposed publicly,
-  because it would act on a personal Bhoonidhi account and its download quota.
+  clean "no scene covers this request" exception.
+- **No Bhoonidhi API integration: data preparation is manual.** The service never talks to Bhoonidhi. Scenes are
+  downloaded by hand (with a Bhoonidhi account) into `data/` and, for the public instance, cut down by
+  `scripts/build_cache.py`. A client that searches the STAC API and downloads scenes on demand would make "fetch the
+  bands on the backend" literal, but it needs a personal account (credentials on a public server would expose that
+  account and its download quota) and I could not test it against the real API, so it is future work.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
   time-series; the two scenes use different UTM zones so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
