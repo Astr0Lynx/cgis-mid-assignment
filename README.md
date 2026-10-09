@@ -1,7 +1,7 @@
 # Bhoonidhi WPS: on-demand NDVI over ISRO's EO archive
 
-CyberGIS mid-sem assignment. An **OGC Web Processing Service (WPS 1.0.0, PyWPS)** that computes NDVI for any
-bounding box from Resourcesat-2 LISS-III scenes published on [Bhoonidhi](https://bhoonidhi.nrsc.gov.in), instead of
+CyberGIS mid-sem assignment. An **OGC Web Processing Service (WPS 1.0.0, PyWPS)** that computes NDVI for a
+bounding box (anywhere the available scenes cover) from Resourcesat-2 LISS-III scenes published on [Bhoonidhi](https://bhoonidhi.nrsc.gov.in), instead of
 making the user download a whole scene and compute it by hand. It offers NDVI, NDWI, MNDWI and NDBI.
 
 **Live endpoint:** `https://triangle-overpass-flirt.ngrok-free.dev/wps`
@@ -48,8 +48,8 @@ Everything happens on the user's machine, so no web app, QGIS plugin or pipeline
 
 ### Prior art, stated honestly
 NRSC publishes a precomputed **AWiFS NDVI time-composite** product (100 m, 10x10 degree tiles, fixed 15-day windows,
-whole-tile download). This service is different: on-demand, any bounding box and date, 24 m LISS-III resolution,
-and a standard OGC interface that clients can discover and call.
+whole-tile download). This service is different: on-demand for a caller-chosen bounding box and scene date (limited to the scenes loaded
+into the service), 24 m LISS-III resolution, and a standard OGC interface that clients can discover and call.
 
 ## 2. The service
 
@@ -132,7 +132,7 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
 - **Independent client.** `python scripts/owslib_check.py [wps_url]` drives GetCapabilities, DescribeProcess and an
   asynchronous Execute with status polling through OWSLib.
 - The suite found several places where PyWPS 4.8 violates the schemas or the OGC axis-order convention; these are
-  fixed in `app/pywps_compat.py` (see section 3). The response options below (`lineage`, `RawDataOutput`,
+  fixed in `app/pywps_compat.py` (see section 3). The response options above (`lineage`, `RawDataOutput`,
   `ResponseDocument`) are tested too, over both KVP and XML POST. Not covered: WPS 2.0, `Reference` inputs, and
   every possible request variant.
 
@@ -140,15 +140,15 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
 - **PyWPS 4.8 on Flask + gunicorn, in Docker.** PyWPS asynchronous execution uses `multiprocessing` and does not work
   on Windows, so the service is run in Docker (Linux).
 - **Pipeline** (`app/`): find scenes whose *actual pixels* cover the bbox -> reproject the bbox into the scene's UTM zone
-  -> read only the needed rows of the Red and NIR bands (windowed read) -> DN to radiance using the per-band
-  `Lmin/Lmax` in `BAND_META.txt` -> NDVI -> write a COG.
+  -> read only the needed rows of the two bands the chosen index uses (windowed read) -> DN to radiance using the
+  per-band `Lmin/Lmax` in `BAND_META.txt` -> index -> write a COG.
 - **Scene selection uses real pixel coverage.** Scenes are tilted, so a bounding rectangle overstates coverage; the
   18 May scene's rectangle contains central Hyderabad but its slanted edge cuts through it (45% valid), so it is rejected.
 - **COG for outputs and for the cache, not for the sources.** The source tifs are uncompressed and row-striped, so a
   bbox clip already reads little; converting them would gain nothing.
 - **Two data modes, one code path.** Full scenes (local, from `data/`) or a pre-clipped cache (public). The cache has
   the same folder layout (`BAND2..5.tif` + `BAND_META.txt`) with small compressed COG bands of the *original* DN values;
-  NDVI from the cache is bit-identical to NDVI from the full scene. `scripts/build_cache.py` builds it from scenes you
+  NDVI from the cache was checked to be bit-identical to NDVI from the full scene for the Hyderabad demo window. `scripts/build_cache.py` builds it from scenes you
   downloaded yourself; the public image contains only this cache (~38 MB for both scenes) and no credentials.
 - **PyWPS conformance fixes** (`app/pywps_compat.py`, applied at import so they survive reinstalls):
   - Axis order: PyWPS 4.8 delivers XML-POST bounding boxes as lon,lat but KVP as lat,lon. Both now follow the OGC
@@ -186,18 +186,22 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 `scripts/inspect_scene.py <scene folder or zip>` prints tif header metadata.
 
 ## 5. Known limitations
-- **Radiance by default; TOA reflectance is built but disabled.** `radiometry=toa` is implemented (formula from NRSC's own surface-reflectance guide, tested against hand calculations) but needs the per-band solar irradiance, and I could not find a citable open source for the LISS-III values, so I did not guess them: the service refuses `toa` until `app/esun_liss3.json` is filled from a publication. Indices use at-sensor radiance. Without a solar-irradiance correction the NDVI is
-  biased low (red solar irradiance exceeds NIR); the Hyderabad 23 May clip has a median NDVI of about -0.05. Treat values
-  as relative. TOA reflectance is the next planned change (`later.md`). The priced BOA surface-reflectance product is the
-  proper alternative.
-- **Public instance serves only the cached area and scenes** (Hyderabad, 18 and 23 May 2026); anything else returns a
+- **Radiance by default; TOA reflectance is built but disabled.** Indices are computed on at-sensor radiance.
+  `radiometry=toa` is implemented (formula from NRSC's own surface-reflectance guide, tested against hand calculations)
+  but needs the per-band solar irradiance (ESUN). I could not find a citable open source for the LISS-III values and did
+  not guess them, so the service refuses `toa` until `app/esun_liss3.json` is filled from a publication (`later.md` says
+  how). Radiance carries no solar-irradiance correction; since red sunlight is stronger than NIR, NDVI is expected to be
+  biased low (the Hyderabad 23 May clip has a median NDVI of about -0.05), but I could not quantify the bias without
+  the ESUN values. Treat values as relative. The priced BOA surface-reflectance product is the proper alternative.
+- **Public instance serves only the cached area and scenes** (Hyderabad, 18 and 23 May 2026; the 18 May scene covers only the western part of the city centre, so
+  most requests resolve to 23 May); anything else returns a
   clean "no scene covers this request" exception. Live fetching from Bhoonidhi is deliberately not exposed publicly,
   because it would act on a personal Bhoonidhi account and its download quota.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
   time-series; the two scenes use different UTM zones so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
-  (Hyderabad, 23 May): every pixel has a positive MNDWI (minimum 0.61) and the median NDBI is -0.66, because the SWIR
-  band's radiance range is tiny next to green's. The indices do pick out the right places: Hussain Sagar lake sits at
+  (Hyderabad, 23 May): every pixel has a positive MNDWI (minimum 0.61) and the median NDBI is -0.66, most likely because the
+  SWIR band's radiance range (Lmax 7.5) is tiny next to green's (Lmax 52); not verified. The indices do pick out the right places: Hussain Sagar lake sits at
   the 99th percentile of NDWI/MNDWI and the 1st percentile of NDVI/NDBI in the window (checked by an automated test, which
   also confirms band wiring and geolocation). Do not apply "NDWI > 0 means water" until reflectance is available.
 - Four indices; SAVI and EVI are not offered (see Processes).
