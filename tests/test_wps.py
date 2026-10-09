@@ -224,3 +224,10 @@ def test_spectral_index_output_is_named_index(client):
 def test_spectral_index_rejects_unknown_and_missing_index(client):
     assert client.get(SI + ";index=savi").status_code == 400  # not offered (needs reflectance)
     assert client.get(SI).status_code == 400  # index is required
+
+
+def test_service_identifies_itself_not_as_pywps_defaults(client):
+    text = client.get("/wps?service=WPS&request=GetCapabilities").data.decode()
+    assert "Bhoonidhi Spectral Index WPS" in text
+    for placeholder in ("PyWPS Processing Service", "Lastname, Firstname", "Mailing Address", "+xx-xxx-xxx-xxxx"):
+        assert placeholder not in text
