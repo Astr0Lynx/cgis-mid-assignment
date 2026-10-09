@@ -10,6 +10,7 @@ from pywps import Service, configuration
 from pywps.exceptions import InvalidParameterValue
 
 import app.pywps_compat  # noqa: F401  (bbox axis order, see module docstring)
+from app.cleanup import start_background_purge
 from app.processes.ndvi import Ndvi, SpectralIndex
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +20,12 @@ OUT_DIR = ROOT / "outputs"
 WORK_DIR = ROOT / "workdir"
 OUT_DIR.mkdir(exist_ok=True)
 WORK_DIR.mkdir(exist_ok=True)
+
+# Results pile up in outputs/ (a status document and a folder per stored job); delete old ones. Set
+# OUTPUT_TTL_HOURS=0 to keep everything.
+OUTPUT_TTL_HOURS = float(os.environ.get("OUTPUT_TTL_HOURS", 24))
+if OUTPUT_TTL_HOURS > 0:
+    start_background_purge(OUT_DIR, OUTPUT_TTL_HOURS * 3600, interval_s=float(os.environ.get("OUTPUT_PURGE_MINUTES", 30)) * 60)
 
 service = Service([Ndvi(), SpectralIndex()], cfgfiles=[str(ROOT / "pywps.cfg")])
 configuration.CONFIG.set("server", "url", f"{BASE_URL}/wps")
