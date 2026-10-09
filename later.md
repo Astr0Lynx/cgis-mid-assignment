@@ -30,11 +30,13 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 - Stretch only: `slope` (needs a DEM), `scene-search` helper, mosaic across the path 99/100 boundary, temporal change between the 18 May and 23 May scenes.
 
 ## Other open items
-- `nodata` is NOT set in the tifs. Assume DN 0 is background, but verify with a small window read at the scene edge; mask it explicitly in code.
+- DONE (verified 2026-10-09): `nodata` is not set in the tifs, but DN 0 is exactly the background. 20.6% of each scene is zero in all four bands (one tilted wedge); the ~2,600 pixels per scene that are zero in only some bands are all within 6 px of that wedge (edge slop); there are no zeros inside the image. Masking per band in `radiometry.dn_to_radiance` is correct.
 - The two scenes use different CRSs (zone 43N vs 44N). Any cross-scene work (mosaic, temporal diff) must reproject; a bbox in lat/lon must be transformed per scene.
 - Cloud cover is empty in `BAND_META.txt`; scene choice must rely on STAC metadata (or a simple NIR/Red brightness mask).
-- Confirm licence/attribution wording for redistributing derived data ("ISRO-IRS" credit).
+- PARTLY DONE: README section 6 states the licence position carefully. The EULA text itself was NOT read (only on the portal login page); read it, and ask NRSC if redistributing outputs beyond coursework.
 - Wake the free-tier host before the demo; keep an ngrok fallback.
+- DONE (2026-10-09): service metadata in `pywps.cfg`, expiry of stored results (`app/cleanup.py`), CI workflow, `build_cache.py` test, README/DEMO corrected (no live-fetch feature exists).
+- NOT DONE, on purpose: an on-demand Bhoonidhi API client (needs a personal account, cannot be tested without credentials).
 
 ## COGs
 - Do NOT convert the source scenes (uncompressed, row-striped, clip reads are already cheap).

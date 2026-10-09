@@ -165,6 +165,11 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
 - **Strict MIME type** `image/tiff; subtype=geotiff` on the output, and `/outputs/` is served statically so async
   status documents and results are reachable.
 - **Bounded cost:** requests above 16 Mpixel (~96 x 96 km at 24 m, `MAX_PIXELS`) are rejected.
+- **Bounded disk:** a background thread deletes stored results older than `OUTPUT_TTL_HOURS` (default 24;
+  `app/cleanup.py`, tested).
+- **Service identity:** GetCapabilities carries project metadata (title, abstract, keywords, access constraints,
+  repository as contact point) from the `[metadata:main]` section of `pywps.cfg`, not PyWPS's placeholder text. No
+  personal contact details are published.
 
 ## 4. Run it
 ```bash
@@ -196,6 +201,9 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 - **Public instance serves only the cached area and scenes** (Hyderabad, 18 and 23 May 2026; the 18 May scene covers only the western part of the city centre, so
   most requests resolve to 23 May); anything else returns a
   clean "no scene covers this request" exception.
+- **Result files expire.** Stored results (the status document and `ndvi.tif` for async or reference responses) are
+  deleted after `OUTPUT_TTL_HOURS` (default 24) so a long-running public instance does not fill its disk; request again
+  to get a fresh link.
 - **No Bhoonidhi API integration: data preparation is manual.** The service never talks to Bhoonidhi. Scenes are
   downloaded by hand (with a Bhoonidhi account) into `data/` and, for the public instance, cut down by
   `scripts/build_cache.py`. A client that searches the STAC API and downloads scenes on demand would make "fetch the
@@ -215,13 +223,21 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 
 ## 6. Data and attribution
 Contains data from Resourcesat-2 LISS-III, **ISRO-IRS**, distributed through Bhoonidhi (NRSC/ISRO). Scenes are not
-redistributed in this repository (`data/` and `cache/` are git-ignored). Check the Bhoonidhi end-user licence before
-publishing derived products beyond this coursework.
+redistributed in this repository (`data/` and `cache/` are git-ignored); the public instance serves *derived* index
+rasters and statistics, not the raw bands.
+
+Licence status, stated carefully: under the Indian Space Policy 2023 as described in Bhoonidhi's own material, data
+coarser than 5 m (LISS-III is 23.5 m) is open data, and vegetation and water indices are among the thematic products
+ISRO releases free. **I could not read the text of the Bhoonidhi End User Licence Agreement itself** (shown on the
+portal's login page), so I have not confirmed its attribution or redistribution clauses for third-party derived
+products. This is a coursework prototype; read the EULA before reusing or republishing the outputs, and ask NRSC
+(bhoonidhi@nrsc.gov.in) if in doubt.
 
 ## 7. Repository layout
 ```
 app/            service code (radiometry, indices, scene clipping, WPS process, Flask server)
 scripts/        inspect_scene.py, build_cache.py, owslib_check.py, validate_schema.py
+.github/        CI workflow (runs the tests that need no scenes)
 tests/          unit, WPS protocol and schema-validation tests (tests/schemas = official OGC XSDs)
 docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (live demo script)
 Dockerfile, pywps.cfg, requirements.txt

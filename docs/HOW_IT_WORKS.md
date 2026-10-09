@@ -57,6 +57,7 @@ app/
   processes/ndvi.py The WPS processes `ndvi` and `spectral-index` (one shared class): inputs/outputs, checks, handler.
   pywps_compat.py   Fixes for places where PyWPS 4.8 breaks the OGC standard (see section 8).
   server.py         The web app: /wps (the service), /outputs/ (result files), / (landing page).
+  cleanup.py        Deletes stored results older than OUTPUT_TTL_HOURS so the disk cannot fill up.
 scripts/
   build_cache.py    data/ -> cache/ (cuts the scenes down to Hyderabad).
   inspect_scene.py  Prints a scene's file headers.
@@ -124,6 +125,15 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
   If the ngrok address changes, restart the container with the new one.
 - The free plan limits connections. Do not run polling loops against the public address.
 
+### Settings you can change (environment variables on `docker run -e NAME=value`)
+| Name | Default | Meaning |
+|---|---|---|
+| `PUBLIC_BASE_URL` | `http://localhost:5000` | the address clients use; goes into links in replies |
+| `MAX_PIXELS` | 16000000 | largest request accepted, in output pixels (about 96 x 96 km) |
+| `OUTPUT_TTL_HOURS` | 24 | stored results older than this are deleted; `0` keeps everything |
+| `OUTPUT_PURGE_MINUTES` | 30 | how often the cleanup runs |
+| `BHOONIDHI_DATA_DIR` | `/srv/data` in Docker | folder holding the scene folders |
+
 ## 7. Two data modes
 
 - **Public / default:** the image contains `cache/` (~38 MB, two scenes cut to a ~65 x 55 km area around Hyderabad).
@@ -148,6 +158,7 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 - `tests/test_core.py`: the maths and the scene logic on synthetic and real data.
 - `tests/test_wps.py`: the service behaves (capabilities, describe, execute, dates, size limit, raw output, errors).
 - `tests/test_schema.py`: replies validate against the **official OGC schemas**.
+- `tests/test_cleanup.py`, `tests/test_build_cache.py`: result expiry, and that the cache gives identical indices.
 - `scripts/validate_schema.py URL`: same, including async, against a *running* server.
 - `scripts/owslib_check.py URL`: a third-party WPS client can use it end to end.
 
