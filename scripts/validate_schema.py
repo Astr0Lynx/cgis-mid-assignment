@@ -27,7 +27,13 @@ def check(name, text):
 
 
 def status_of(doc):
-    root = etree.fromstring(doc.encode())
+    try:
+        root = etree.fromstring(doc.encode())
+    except etree.XMLSyntaxError:
+        sys.exit("A status URL returned something that is not XML (first 80 chars: %r). "
+                 "The service puts its PUBLIC_BASE_URL in status links; if that is a tunnel address (ngrok) that is "
+                 "not running, you get the tunnel's error page. Start the tunnel, or restart the container with "
+                 "PUBLIC_BASE_URL set to an address that works from here." % doc[:80])
     ns = {"wps": "http://www.opengis.net/wps/1.0.0"}
     return root.get("statusLocation"), [e.tag.split("}")[1] for e in root.find("wps:Status", ns)]
 
