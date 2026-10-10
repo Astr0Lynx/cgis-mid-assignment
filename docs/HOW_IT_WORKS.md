@@ -137,6 +137,7 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 | `BHOONIDHI_DATA_DIR` | `/srv/data` in Docker | folder holding the scene folders |
 | `BHOONIDHI_LIVE`, `BHOONIDHI_USER`, `BHOONIDHI_PASSWORD` | unset | live mode (all three needed). Your own account; **local use only** |
 | `BHOONIDHI_LOOKBACK_DAYS`, `BHOONIDHI_MAX_DOWNLOADS` | 60, 2 | live mode: search window when no date is given; downloads per request |
+| `BHOONIDHI_DOWNLOAD_AUTH` | `bearer` | how the token is presented to `/download`: `bearer`, `query` or `token-header` (find out with `fetch_scene.py --probe-download-auth`) |
 
 ## 7. Data modes
 

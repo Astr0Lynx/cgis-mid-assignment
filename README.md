@@ -195,6 +195,7 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 ```bash
 cp .env.example .env        # then fill in BHOONIDHI_USER and BHOONIDHI_PASSWORD; .env is git-ignored
 python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run   # log in + search, downloads nothing
+python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-10-09 --probe-download-auth   # how /download wants the token
 python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-05-23   # download into data/
 # or let the service fetch on demand (data/ must be writable, so no ":ro"; no quotes inside .env for --env-file):
 docker run -p 5000:5000 --env-file .env -v "$PWD/data:/srv/data" bhoonidhi-wps
@@ -227,7 +228,7 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   follows NRSC's published API specification and is tested against a fake of it (`tests/`). The account owner ran
   `python scripts/fetch_scene.py --dry-run` against the real Bhoonidhi on 2026-10-10: **login and STAC search worked**
   (no one-time code was needed), returning 18 online Resourcesat-2/2A LISS-III scenes for central Hyderabad over 60 days,
-  with footprints and acquisition dates parsed correctly. **Not yet verified: the download and unpacking** (the
+  with footprints and acquisition dates parsed correctly. **Not yet verified: the download and unpacking.** A first real attempt was refused with `401 Invalid session detected! Please login.` when the token was sent as a Bearer header, which is what the specification documents (the unofficial portal client sends it as `?token=`); `--probe-download-auth` tries the plausible forms and `BHOONIDHI_DOWNLOAD_AUTH` selects the one that works. (The
   specification does not say what `/download` returns; the client accepts a zip with the four band GeoTIFFs and
   `BAND_META.txt` and fails clearly otherwise) and the end-to-end WPS request that triggers it. It is for a locally run
   service only: the public instance never has credentials and runs cache-only.
