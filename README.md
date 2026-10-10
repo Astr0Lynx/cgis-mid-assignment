@@ -223,13 +223,14 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 - **Result files expire.** Stored results (the status document and `ndvi.tif` for async or reference responses) are
   deleted after `OUTPUT_TTL_HOURS` (default 24) so a long-running public instance does not fill its disk; request again
   to get a fresh link.
-- **Live mode (fetch the scene from Bhoonidhi on demand) is implemented but has NOT been verified against the real
-  Bhoonidhi API.** The client follows NRSC's published API specification and is tested against a fake of it, but
-  testing the real thing needs a personal Bhoonidhi account, which I did not have. The specification does not say what
-  the download response looks like (the client accepts a zip with the four band GeoTIFFs and `BAND_META.txt` and fails
-  clearly otherwise), and the account may require a one-time code that this client cannot supply. Check with
-  `python scripts/fetch_scene.py --dry-run ...` and your own credentials (section 4). It is for a locally run service
-  only: the public instance never has credentials and runs cache-only.
+- **Live mode (fetch the scene from Bhoonidhi on demand) is only partly verified against the real API.** The client
+  follows NRSC's published API specification and is tested against a fake of it (`tests/`). The account owner ran
+  `python scripts/fetch_scene.py --dry-run` against the real Bhoonidhi on 2026-10-10: **login and STAC search worked**
+  (no one-time code was needed), returning 18 online Resourcesat-2/2A LISS-III scenes for central Hyderabad over 60 days,
+  with footprints and acquisition dates parsed correctly. **Not yet verified: the download and unpacking** (the
+  specification does not say what `/download` returns; the client accepts a zip with the four band GeoTIFFs and
+  `BAND_META.txt` and fails clearly otherwise) and the end-to-end WPS request that triggers it. It is for a locally run
+  service only: the public instance never has credentials and runs cache-only.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
   time-series; the two scenes use different UTM zones so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example

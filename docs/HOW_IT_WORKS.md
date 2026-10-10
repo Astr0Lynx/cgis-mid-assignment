@@ -146,7 +146,8 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
   scenes cover. Build the cache with `python scripts/build_cache.py` after adding scenes.
 - **Live (local, optional):** with `BHOONIDHI_LIVE=1` and your credentials, a request nothing on disk can answer makes the
   service search Bhoonidhi, download the scene into the data folder and carry on; the next request for that area is
-  served from disk. **Not yet verified against the real API** (see README section 5). Start with
+  served from disk. **Login and search are verified against the real API; download and unpacking are not yet** (see README
+  section 5). Start with
   `python scripts/fetch_scene.py --dry-run ...`. Credentials must come from the environment or a git-ignored `.env`,
   never from the image; do not enable this on a public instance.
 
@@ -170,7 +171,8 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 - `tests/test_cleanup.py`, `tests/test_build_cache.py`: result expiry, and that the cache gives identical indices.
 - `tests/test_bhoonidhi_client.py`, `test_live_mode.py`, `test_fetch_script.py`: the Bhoonidhi client, live mode through the
   WPS endpoint, and the check script, all against a **fake** of the documented API (`tests/live_helpers.py`). They prove
-  the logic; only your own account can prove the real API behaves as documented.
+  the logic; only your own account can prove the real API behaves as documented (login and search have been checked that way;
+  download has not).
 - `scripts/validate_schema.py URL`: same, including async, against a *running* server.
 - `scripts/owslib_check.py URL`: a third-party WPS client can use it end to end.
 
