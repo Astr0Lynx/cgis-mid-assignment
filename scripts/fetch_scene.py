@@ -12,6 +12,7 @@ limited to 20 calls per hour per IP address, so do not run it in a loop.
 import argparse
 import os
 import sys
+import time
 from datetime import date
 from pathlib import Path
 
@@ -31,6 +32,8 @@ def main() -> int:
     ap.add_argument("--probe-download-auth", action="store_true",
                     help="try each way of presenting the token to /download (Bearer header, ?token=, token header) "
                          "and report which one the server accepts; downloads nothing")
+    ap.add_argument("--settle", type=float, default=0.0, metavar="SECONDS",
+                    help="with --probe-download-auth: wait this long after login and search before asking /download")
     ap.add_argument("--diagnose-download", action="store_true",
                     help="send ONE request to /download and print how the server answers (status, headers, "
                          "redirect target, first bytes); downloads nothing and prints no secrets")
@@ -70,6 +73,9 @@ def main() -> int:
             if not options:
                 print("No scene to probe: none covers the bbox.")
                 return 1
+            if args.settle:
+                print(f"Waiting {args.settle:g} s after login before asking /download (does a new session need time?) ...")
+                time.sleep(args.settle)
             print(f"Probing how /download wants the token, using {options[0].id} (nothing is downloaded):")
             results = client.probe_download_auth(options[0])
             for r in results:

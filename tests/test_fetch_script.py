@@ -73,3 +73,12 @@ def test_probe_download_auth_prints_each_style_and_the_setting_to_use(run, tmp_p
     assert code == 0 and "bearer" in out and "status=200" in out
     assert "set BHOONIDHI_DOWNLOAD_AUTH=bearer" in out
     assert not (tmp_path / "data").exists() and "token-" not in out and "correct-horse" not in out
+
+
+def test_settle_waits_after_login_before_probing(run, monkeypatch):
+    import time
+
+    slept = []
+    monkeypatch.setattr(time, "sleep", lambda s: slept.append(s))
+    code, out, _ = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-download-auth", "--settle", "20")
+    assert code == 0 and slept == [20.0] and "Waiting 20 s after login" in out
