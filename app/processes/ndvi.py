@@ -15,9 +15,11 @@ from pywps import BoundingBoxInput, ComplexOutput, Format, LiteralInput, Process
 from pywps.app.exceptions import ProcessError
 from pywps.inout.literaltypes import AnyValue
 
+from app import live_fetch
+from app.bhoonidhi_client import BhoonidhiError
 from app.indices import INDICES
 from app.radiometry import MODES, EsunNotConfigured
-from app.scene import find_scenes, write_cog
+from app.scene import DATA_DIR, find_scenes, write_cog
 
 GEOTIFF = Format("image/tiff; subtype=geotiff", extension=".tif")
 JSON = Format("application/json", extension=".json")
@@ -133,15 +135,22 @@ class IndexProcess(Process):
             raise ProcessError(f"Unknown index {name!r}; available: {', '.join(INDICES)}")
         mode = request.inputs["radiometry"][0].data if "radiometry" in request.inputs else "radiance"
 
-        response.update_status("Searching scenes", 10)
-        scenes = find_scenes(bbox)
+        wanted = None
         if "date" in request.inputs:
             raw = request.inputs["date"][0].data
             try:
                 wanted = datetime.strptime(raw, "%Y-%m-%d").date()
             except ValueError:
                 raise ProcessError(f"Invalid date {raw!r}: expected YYYY-MM-DD")
-            scenes = [s for s in scenes if s.date.date() == wanted]
+
+        response.update_status("Searching scenes", 10)
+        scenes = [s for s in find_scenes(bbox, DATA_DIR) if wanted is None or s.date.date() == wanted]
+        if not scenes and live_fetch.enabled():
+            # Local mode only (needs a personal Bhoonidhi account in the environment): fetch the scene on demand.
+            try:
+                scenes = [live_fetch.ensure_scene(bbox, wanted, DATA_DIR, progress=response.update_status)]
+            except BhoonidhiError as e:
+                raise ProcessError(str(e))
         if not scenes:
             raise ProcessError("No available scene fully covers this bbox (and date, if given)")
 

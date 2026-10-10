@@ -6,3 +6,5 @@ workdir
 __pycache__
 *.docx
 state
+.env
+.env.*
