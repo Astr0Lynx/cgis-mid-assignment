@@ -97,6 +97,7 @@ class BhoonidhiClient:
         self.session = session or requests.Session()
         self._sleep, self._clock, self.retry_waits = sleep, clock, retry_waits
         self._access = self._refresh = None
+        self._secrets = {password}  # every secret ever held, so none can leak through an old message
         self._expires_at = 0.0
         self._last_search = 0.0
 
@@ -113,6 +114,7 @@ class BhoonidhiClient:
         data = r.json()
         self._access = data["access_token"]
         self._refresh = data.get("refresh_token")
+        self._secrets.update(t for t in (self._access, self._refresh) if t)
         self._expires_at = self._clock() + float(data.get("expires_in", 1200)) - 60  # renew a minute early
 
     def _ensure_token(self) -> str:
@@ -178,13 +180,60 @@ class BhoonidhiClient:
                               geometry=f.get("geometry"), online=None if online is None else online == "Y"))
         return items
 
-    @staticmethod
-    def _describe(r) -> str:
+    def _scrub(self, text: str) -> str:
+        """Remove anything secret from text that came back from the server before it is shown or logged."""
+        for secret in self._secrets:
+            if secret:
+                text = text.replace(secret, "***")
+        return text
+
+    def _describe(self, r) -> str:
+        """The server's own explanation of an error: the JSON Description if there is one, else the start of the body."""
         try:
             d = r.json()
-            return str(d.get("Description") or d.get("description") or "")[:200]
+            text = str(d.get("Description") or d.get("description") or d.get("ErrorCode") or "")
         except Exception:
-            return ""
+            try:
+                text = " ".join((r.text or "").split())
+            except Exception:
+                text = ""
+        reason = getattr(r, "reason", "") or ""
+        return self._scrub(f"[{reason}] {text}".strip() if text else f"[{reason}]" if reason else "")[:240]
+
+    def diagnose_download(self, item: Item) -> dict:
+        """One request to /download that shows how the server answers, without downloading the file or leaking a secret.
+
+        Redirects are NOT followed, so a redirect to another host (where `requests` would drop the Authorization
+        header) is visible. Returns only non-secret facts: status, a few headers, the redirect target without its
+        query string, and the first bytes of the body.
+        """
+        from urllib.parse import urlsplit
+
+        r = self._call("GET", "/download", params={"id": item.id, "collection": item.collection}, stream=True,
+                       timeout=(15, 60), allow_redirects=False)
+        first = b""
+        try:
+            first = next(iter(r.iter_content(chunk_size=300)), b"")
+        finally:
+            close = getattr(r, "close", None)
+            if close:
+                close()
+        h = r.headers
+        location = h.get("Location")
+        if location:
+            u = urlsplit(location)
+            location = f"{u.scheme}://{u.netloc}{u.path}"  # drop the query string: it may carry a signature
+        return {
+            "status": r.status_code,
+            "reason": getattr(r, "reason", ""),
+            "content_type": h.get("Content-Type"),
+            "content_length": h.get("Content-Length"),
+            "content_disposition": h.get("Content-Disposition"),
+            "www_authenticate": h.get("WWW-Authenticate"),
+            "location": location,
+            "server": h.get("Server"),
+            "starts_with": self._scrub(first[:120].decode("latin-1")) if not first.startswith(b"PK") else "PK (a zip archive)",
+        }
 
     # ---- download ------------------------------------------------------------------------------------------
 

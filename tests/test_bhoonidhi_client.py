@@ -243,3 +243,52 @@ def test_env_file_is_loaded_without_overriding_and_ignores_comments(tmp_path, mo
     assert os.environ["BHOONIDHI_USER"] == "alice" and os.environ["BHOONIDHI_PASSWORD"] == "s3cret"
     assert os.environ["OTHER"] == "keep"
     load_env_file(tmp_path / "missing.env")  # a missing file is fine
+
+
+# ---- diagnosing a refused download -------------------------------------------------------------------------------
+
+def test_error_messages_include_what_the_server_said_and_never_a_secret(tmp_path):
+    from tests.live_helpers import FakeResponse
+
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    client, _ = make_client(api)
+    client.search(BBOX)  # logs in, so the client now holds a token
+    token = client._access
+    api.download_response = lambda kw: FakeResponse(
+        401, body=f"<html>Unauthorized: token {token} rejected for user</html>", reason="UNAUTHORIZED")
+    with pytest.raises(BhoonidhiError) as e:
+        client.download_scene(item(), tmp_path / "data")
+    msg = str(e.value)
+    assert "401" in msg and "UNAUTHORIZED" in msg and "Unauthorized: token" in msg
+    assert token not in msg and "correct-horse" not in msg  # the server echoed the token; it must be scrubbed
+
+
+def test_diagnose_download_shows_a_redirect_without_following_it_or_leaking(tmp_path):
+    from tests.live_helpers import FakeResponse
+
+    seen = {}
+
+    def answer(kw):
+        seen.update(kw)
+        return FakeResponse(302, headers={"Location": "https://files.example.org/store/x.zip?Signature=SECRET123",
+                                          "Server": "nginx"}, chunks=[b""], reason="FOUND")
+
+    api = FakeBhoonidhi()
+    api.download_response = answer
+    client, _ = make_client(api)
+    report = client.diagnose_download(item())
+    assert report["status"] == 302 and report["location"] == "https://files.example.org/store/x.zip"
+    assert "SECRET123" not in str(report)  # the query string (a possible signature) is dropped
+    assert seen["allow_redirects"] is False and seen["stream"] is True
+
+
+def test_diagnose_download_recognises_a_zip_and_a_refusal(tmp_path):
+    from tests.live_helpers import FakeResponse
+
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    client, _ = make_client(api)
+    ok = client.diagnose_download(item())
+    assert ok["status"] == 200 and ok["starts_with"] == "PK (a zip archive)" and ok["content_length"]
+    api.download_response = lambda kw: FakeResponse(401, headers={"WWW-Authenticate": "Bearer realm=x"}, chunks=[b"nope"])
+    refused = client.diagnose_download(item())
+    assert refused["status"] == 401 and refused["www_authenticate"] == "Bearer realm=x" and refused["starts_with"] == "nope"

@@ -55,17 +55,26 @@ def feature(scene_id: str, collection="ResourceSat-2_LISS3_L2", online="Y", geom
 
 
 class FakeResponse:
-    def __init__(self, status=200, body=None, chunks=None, headers=None, fail_after=None):
+    def __init__(self, status=200, body=None, chunks=None, headers=None, fail_after=None, reason=""):
         self.status_code = status
         self._body = body if body is not None else {}
         self._chunks = chunks or []
         self.headers = headers or {}
         self._fail_after = fail_after
+        self.reason = reason
+        self.closed = False
 
     def json(self):
         if isinstance(self._body, (bytes, str)):
             raise ValueError("not json")
         return self._body
+
+    @property
+    def text(self):
+        return self._body.decode() if isinstance(self._body, bytes) else self._body if isinstance(self._body, str) else json.dumps(self._body)
+
+    def close(self):
+        self.closed = True
 
     def iter_content(self, chunk_size=1):
         for n, chunk in enumerate(self._chunks):
@@ -84,6 +93,7 @@ class FakeBhoonidhi:
         self.password = password
         self.calls = []  # (method, path, kwargs)
         self.download_statuses = {}  # item id -> list of statuses to return before success
+        self.download_response = None  # optional callable(kwargs) -> FakeResponse, overrides /download entirely
         self.valid_tokens = set()
         self._n = 0
 
@@ -99,6 +109,8 @@ class FakeBhoonidhi:
             return FakeResponse(200, {"type": "FeatureCollection", "features": self.features,
                                       "context": {"limit": 100, "returned": len(self.features)}})
         if path == "/download":
+            if self.download_response is not None:  # a test script for an unusual server behaviour
+                return self.download_response(kw)
             item_id = kw["params"]["id"]
             queue = self.download_statuses.get(item_id, [])
             if queue:

@@ -28,6 +28,9 @@ def main() -> int:
     ap.add_argument("--date", help="acquisition date YYYY-MM-DD (default: the last %d days)" % live_fetch.LOOKBACK_DAYS)
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--dry-run", action="store_true", help="log in and search only; download nothing")
+    ap.add_argument("--diagnose-download", action="store_true",
+                    help="send ONE request to /download and print how the server answers (status, headers, "
+                         "redirect target, first bytes); downloads nothing and prints no secrets")
     args = ap.parse_args()
 
     load_env_file(Path(".env"))
@@ -58,6 +61,15 @@ def main() -> int:
             print(f"  {i.date}  {i.collection:26s} {i.id}  ({covers})")
         if args.dry_run:
             print("Dry run: nothing downloaded.")
+            return 0
+        if args.diagnose_download:
+            options = live_fetch.candidates(bbox, wanted, client)
+            if not options:
+                print("No scene to diagnose: none covers the bbox.")
+                return 1
+            print(f"Asking /download about {options[0].id} (redirects not followed; the file is not downloaded):")
+            for key, value in client.diagnose_download(options[0]).items():
+                print(f"  {key:20s} {value}")
             return 0
         scene = live_fetch.ensure_scene(bbox, wanted, Path(args.data_dir), client=client,
                                         progress=lambda message, percent: print(f"  [{percent:3d}%] {message}"))

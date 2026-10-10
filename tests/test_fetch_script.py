@@ -58,3 +58,11 @@ def test_api_failures_exit_nonzero_with_a_message(run, monkeypatch):
     monkeypatch.setenv("BHOONIDHI_PASSWORD", "wrong-password")
     code, out, _ = run("--bbox", "17.49,77.49,17.51,77.51", "--dry-run")
     assert code == 1 and "authentication failed" in out and "wrong-password" not in out
+
+
+def test_diagnose_download_prints_how_the_server_answers_and_downloads_nothing(run, tmp_path):
+    code, out, api = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--diagnose-download")
+    assert code == 0 and f"Asking /download about {SCENE}" in out
+    assert "status" in out and "200" in out and "PK (a zip archive)" in out
+    assert not (tmp_path / "data").exists()  # nothing was saved
+    assert "correct-horse" not in out and "token-" not in out and "Bearer" not in out
