@@ -141,3 +141,9 @@ def test_hussain_sagar_lake_is_the_wettest_and_least_vegetated_place():
         lake = float(np.nanmean(clip.data[row - 2:row + 3, col - 2:col + 3]))
         pct = float((clip.data[np.isfinite(clip.data)] < lake).mean())
         assert (pct > 0.95) if lake_is_high else (pct < 0.05), f"{name}: lake at percentile {pct:.2f}"
+
+
+@needs_data
+def test_valid_fraction_is_zero_for_a_bbox_that_misses_the_scene():
+    scene = find_scenes(HYDERABAD)[0]
+    assert scene.valid_fraction((70.0, 10.0, 70.1, 10.1)) == 0.0  # far outside; used to raise WindowError

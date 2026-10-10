@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import rasterio
+from rasterio.errors import WindowError
 from rasterio.shutil import copy as rio_copy
 from rasterio.transform import Affine
 from rasterio.warp import transform_bounds
@@ -50,9 +51,12 @@ class Scene:
         return l >= self.bounds.left and r <= self.bounds.right and b >= self.bounds.bottom and t <= self.bounds.top
 
     def valid_fraction(self, bbox) -> float:
-        """Fraction of the bbox with real data in both NIR and Red (DN 0 = background)."""
-        nir, _ = self.read_clip("nir", bbox)
-        red, _ = self.read_clip("red", bbox)
+        """Fraction of the bbox with real data in both NIR and Red (DN 0 = background); 0 if it misses the scene."""
+        try:
+            nir, _ = self.read_clip("nir", bbox)
+            red, _ = self.read_clip("red", bbox)
+        except WindowError:  # the bbox does not overlap the image at all
+            return 0.0
         return float(np.mean(np.isfinite(nir) & np.isfinite(red))) if nir.size else 0.0
 
     def read_clip(self, band: str, bbox, mode: str = "radiance"):
