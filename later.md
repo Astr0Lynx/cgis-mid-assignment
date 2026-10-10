@@ -36,7 +36,8 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 - PARTLY DONE: README section 6 states the licence position carefully. The EULA text itself was NOT read (only on the portal login page); read it, and ask NRSC if redistributing outputs beyond coursework.
 - Wake the free-tier host before the demo; keep an ngrok fallback.
 - DONE (2026-10-09): service metadata in `pywps.cfg`, expiry of stored results (`app/cleanup.py`), CI workflow, `build_cache.py` test, README/DEMO corrected (no live-fetch feature exists).
-- NOT DONE, on purpose: an on-demand Bhoonidhi API client (needs a personal account, cannot be tested without credentials).
+- DONE (2026-10-10, but UNVERIFIED against the real API): on-demand Bhoonidhi client + live mode (`app/bhoonidhi_client.py`, `app/live_fetch.py`, `scripts/fetch_scene.py`), tested with a fake of the documented API. TO VERIFY: run `python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run` with your credentials. Unknowns: what /download returns (client expects a zip with BAND2-5.tif + BAND_META.txt), whether your account needs an emailed OTP for API tokens, the exact STAC item properties (date falls back to the product id).
+- IDEA: persist the access token across processes (async jobs are forked and each authenticates; limit is 20 logins/hour).
 
 ## COGs
 - Do NOT convert the source scenes (uncompressed, row-striped, clip reads are already cheap).

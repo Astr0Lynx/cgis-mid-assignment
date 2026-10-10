@@ -162,6 +162,14 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
   private to each process. Async jobs run in forked children, so the server never saw them finish and, after
   `parallelprocesses` (2) jobs, queued every new async job forever. `app/server.py` points it at a file database
   (reset at start-up; one gunicorn worker).
+- **Live mode** (`app/bhoonidhi_client.py`, `app/live_fetch.py`; off unless `BHOONIDHI_LIVE=1` and credentials are
+  in the environment): if no local scene covers a request, search Bhoonidhi (STAC `POST /data/search`, online
+  Resourcesat-2/2A LISS-III standard products only), keep scenes whose footprint contains the bbox, download the newest
+  (at most 2 attempts per request, to protect the account's quota), unpack only the four bands and `BAND_META.txt`, check
+  that real pixels cover the bbox, then compute as usual. Tokens are cached and refreshed (authentication is limited to
+  20 calls per hour), searches are spaced to the 3-per-second limit, busy or interrupted downloads are retried after
+  waiting, passwords never appear in logs or error messages, and the scene is kept so the next request is local.
+  Use async Execute for it: a download takes minutes.
 - **Strict MIME type** `image/tiff; subtype=geotiff` on the output, and `/outputs/` is served statically so async
   status documents and results are reachable.
 - **Bounded cost:** requests above 16 Mpixel (~96 x 96 km at 24 m, `MAX_PIXELS`) are rejected.
@@ -183,6 +191,17 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 # behind a tunnel, tell the service its public URL so status/output links are correct:
 #   docker run -p 5000:5000 -e PUBLIC_BASE_URL=https://<your-tunnel> bhoonidhi-wps
 ```
+### Live mode (local only, needs your own Bhoonidhi account)
+```bash
+cp .env.example .env        # then fill in BHOONIDHI_USER and BHOONIDHI_PASSWORD; .env is git-ignored
+python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run   # log in + search, downloads nothing
+python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-05-23   # download into data/
+# or let the service fetch on demand (data/ must be writable, so no ":ro"; no quotes inside .env for --env-file):
+docker run -p 5000:5000 --env-file .env -v "$PWD/data:/srv/data" bhoonidhi-wps
+```
+Never put credentials in the image or the repository, and never run live mode on a publicly exposed instance: anyone
+who can reach it could spend your account's download quota.
+
 A step-by-step live demo script: **[docs/DEMO.md](docs/DEMO.md)**.
 
 How the pieces fit together, Docker/ngrok basics and troubleshooting: **[docs/HOW_IT_WORKS.md](docs/HOW_IT_WORKS.md)**.
@@ -204,11 +223,13 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 - **Result files expire.** Stored results (the status document and `ndvi.tif` for async or reference responses) are
   deleted after `OUTPUT_TTL_HOURS` (default 24) so a long-running public instance does not fill its disk; request again
   to get a fresh link.
-- **No Bhoonidhi API integration: data preparation is manual.** The service never talks to Bhoonidhi. Scenes are
-  downloaded by hand (with a Bhoonidhi account) into `data/` and, for the public instance, cut down by
-  `scripts/build_cache.py`. A client that searches the STAC API and downloads scenes on demand would make "fetch the
-  bands on the backend" literal, but it needs a personal account (credentials on a public server would expose that
-  account and its download quota) and I could not test it against the real API, so it is future work.
+- **Live mode (fetch the scene from Bhoonidhi on demand) is implemented but has NOT been verified against the real
+  Bhoonidhi API.** The client follows NRSC's published API specification and is tested against a fake of it, but
+  testing the real thing needs a personal Bhoonidhi account, which I did not have. The specification does not say what
+  the download response looks like (the client accepts a zip with the four band GeoTIFFs and `BAND_META.txt` and fails
+  clearly otherwise), and the account may require a one-time code that this client cannot supply. Check with
+  `python scripts/fetch_scene.py --dry-run ...` and your own credentials (section 4). It is for a locally run service
+  only: the public instance never has credentials and runs cache-only.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
   time-series; the two scenes use different UTM zones so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
@@ -235,8 +256,8 @@ products. This is a coursework prototype; read the EULA before reusing or republ
 
 ## 7. Repository layout
 ```
-app/            service code (radiometry, indices, scene clipping, WPS process, Flask server)
-scripts/        inspect_scene.py, build_cache.py, owslib_check.py, validate_schema.py
+app/            service code (radiometry, indices, scene clipping, WPS process, Flask server, Bhoonidhi client)
+scripts/        inspect_scene.py, build_cache.py, fetch_scene.py, owslib_check.py, validate_schema.py
 .github/        CI workflow (runs the tests that need no scenes)
 tests/          unit, WPS protocol and schema-validation tests (tests/schemas = official OGC XSDs)
 docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (live demo script)

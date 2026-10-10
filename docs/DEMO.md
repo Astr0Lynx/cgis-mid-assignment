@@ -87,8 +87,9 @@ schemas. Say what it found: PyWPS 4.8 produced schema-invalid XML in several pla
 ## Honest limitations to state yourself
 - Indices use at-sensor radiance, not reflectance, so absolute values are biased and only contrast is meaningful.
   Reflectance (`radiometry=toa`) is built but disabled until a cited solar-irradiance table is available.
-- The public instance serves only the cached Hyderabad area and two dates. The service does not call the Bhoonidhi
-  API: scenes were downloaded by hand and prepared offline (future work: an on-demand client).
+- The public instance serves only the cached Hyderabad area and two dates; it has no Bhoonidhi credentials. A local
+  "live mode" can fetch scenes on demand from your own account, but it has been tested against a fake of the API only,
+  so do not demo it unless you have run `scripts/fetch_scene.py --dry-run` successfully first.
 - Four indices (NDVI, NDWI, MNDWI, NDBI); no SAVI/EVI, no cloud masking, one scene per answer.
 
 ## If something goes wrong

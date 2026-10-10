@@ -58,6 +58,8 @@ app/
   pywps_compat.py   Fixes for places where PyWPS 4.8 breaks the OGC standard (see section 8).
   server.py         The web app: /wps (the service), /outputs/ (result files), / (landing page).
   cleanup.py        Deletes stored results older than OUTPUT_TTL_HOURS so the disk cannot fill up.
+  bhoonidhi_client.py  Talks to the Bhoonidhi API: log in, search, download a scene (written from NRSC's spec, tested on a fake).
+  live_fetch.py     Live mode: if no local scene covers a request, fetch one through the client. Off by default.
 scripts/
   build_cache.py    data/ -> cache/ (cuts the scenes down to Hyderabad).
   inspect_scene.py  Prints a scene's file headers.
@@ -133,13 +135,20 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 | `OUTPUT_TTL_HOURS` | 24 | stored results older than this are deleted; `0` keeps everything |
 | `OUTPUT_PURGE_MINUTES` | 30 | how often the cleanup runs |
 | `BHOONIDHI_DATA_DIR` | `/srv/data` in Docker | folder holding the scene folders |
+| `BHOONIDHI_LIVE`, `BHOONIDHI_USER`, `BHOONIDHI_PASSWORD` | unset | live mode (all three needed). Your own account; **local use only** |
+| `BHOONIDHI_LOOKBACK_DAYS`, `BHOONIDHI_MAX_DOWNLOADS` | 60, 2 | live mode: search window when no date is given; downloads per request |
 
-## 7. Two data modes
+## 7. Data modes
 
 - **Public / default:** the image contains `cache/` (~38 MB, two scenes cut to a ~65 x 55 km area around Hyderabad).
   No Bhoonidhi account is involved. A box outside the cache gets "no scene covers this bbox".
 - **Full scenes (local):** mount your downloaded `data/` folder over it (table above). Same code, any area those
   scenes cover. Build the cache with `python scripts/build_cache.py` after adding scenes.
+- **Live (local, optional):** with `BHOONIDHI_LIVE=1` and your credentials, a request nothing on disk can answer makes the
+  service search Bhoonidhi, download the scene into the data folder and carry on; the next request for that area is
+  served from disk. **Not yet verified against the real API** (see README section 5). Start with
+  `python scripts/fetch_scene.py --dry-run ...`. Credentials must come from the environment or a git-ignored `.env`,
+  never from the image; do not enable this on a public instance.
 
 ## 8. Problems found while building (worth knowing)
 
@@ -159,6 +168,9 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 - `tests/test_wps.py`: the service behaves (capabilities, describe, execute, dates, size limit, raw output, errors).
 - `tests/test_schema.py`: replies validate against the **official OGC schemas**.
 - `tests/test_cleanup.py`, `tests/test_build_cache.py`: result expiry, and that the cache gives identical indices.
+- `tests/test_bhoonidhi_client.py`, `test_live_mode.py`, `test_fetch_script.py`: the Bhoonidhi client, live mode through the
+  WPS endpoint, and the check script, all against a **fake** of the documented API (`tests/live_helpers.py`). They prove
+  the logic; only your own account can prove the real API behaves as documented.
 - `scripts/validate_schema.py URL`: same, including async, against a *running* server.
 - `scripts/owslib_check.py URL`: a third-party WPS client can use it end to end.
 
