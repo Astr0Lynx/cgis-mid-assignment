@@ -19,7 +19,7 @@ def run(tmp_path, monkeypatch, capsys):
     spec.loader.exec_module(mod)
     api = FakeBhoonidhi([feature(SCENE)], archives={SCENE: make_zip(tmp_path, SCENE)})
     monkeypatch.setattr(mod, "BhoonidhiClient",
-                        lambda u, p: BhoonidhiClient(u, p, session=api, sleep=lambda s: None))
+                        lambda u, p, **kw: BhoonidhiClient(u, p, session=api, sleep=lambda s: None, **kw))
     monkeypatch.chdir(tmp_path)  # no stray .env is picked up
     monkeypatch.setenv("BHOONIDHI_USER", "student")
     monkeypatch.setenv("BHOONIDHI_PASSWORD", "correct-horse")
@@ -66,3 +66,10 @@ def test_diagnose_download_prints_how_the_server_answers_and_downloads_nothing(r
     assert "status" in out and "200" in out and "PK (a zip archive)" in out
     assert not (tmp_path / "data").exists()  # nothing was saved
     assert "correct-horse" not in out and "token-" not in out and "Bearer" not in out
+
+
+def test_probe_download_auth_prints_each_style_and_the_setting_to_use(run, tmp_path, monkeypatch):
+    code, out, api = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-download-auth")
+    assert code == 0 and "bearer" in out and "status=200" in out
+    assert "set BHOONIDHI_DOWNLOAD_AUTH=bearer" in out
+    assert not (tmp_path / "data").exists() and "token-" not in out and "correct-horse" not in out

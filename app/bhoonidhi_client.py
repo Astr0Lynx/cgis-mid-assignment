@@ -28,6 +28,9 @@ BASE_URL = "https://bhoonidhi-api.nrsc.gov.in"
 LISS3_COLLECTIONS = ("ResourceSat-2_LISS3_L2", "ResourceSat-2A_LISS3_L2")
 SCENE_FILES = ("BAND2.tif", "BAND3.tif", "BAND4.tif", "BAND5.tif", "BAND_META.txt")
 RETRY_STATUSES = {412, 429, 503, 504}
+# How the access token is presented to /download. The specification says "bearer"; the server answered a Bearer
+# request with 401 "Invalid session detected", and the unofficial portal client sends the token as ?token=...
+DOWNLOAD_AUTH_STYLES = ("bearer", "query", "token-header")
 AUTH_ERRORS = {
     400: "the request keys were rejected",
     401: "the user id or password was rejected",
@@ -89,7 +92,10 @@ def footprint_contains_bbox(geometry: dict | None, bbox) -> bool:
 
 class BhoonidhiClient:
     def __init__(self, user: str, password: str, base_url: str = BASE_URL, session=None,
-                 sleep=time.sleep, clock=time.monotonic, retry_waits=(5, 20, 60)):
+                 sleep=time.sleep, clock=time.monotonic, retry_waits=(5, 20, 60), download_auth: str = "bearer"):
+        if download_auth not in DOWNLOAD_AUTH_STYLES:
+            raise BhoonidhiError(f"unknown download auth style {download_auth!r}; use one of {DOWNLOAD_AUTH_STYLES}")
+        self.download_auth = download_auth
         if not user or not password:
             raise BhoonidhiError("Bhoonidhi credentials are not set (BHOONIDHI_USER / BHOONIDHI_PASSWORD)")
         self._user, self._password = user, password
@@ -191,7 +197,9 @@ class BhoonidhiClient:
         """The server's own explanation of an error: the JSON Description if there is one, else the start of the body."""
         try:
             d = r.json()
-            text = str(d.get("Description") or d.get("description") or d.get("ErrorCode") or "")
+            # the API's error object is {ErrorCode, Description, Action}; the Action is usually the useful part
+            parts = [d.get("Description") or d.get("description"), d.get("Action") or d.get("action")]
+            text = " - ".join(str(p) for p in parts if p) or str(d.get("ErrorCode") or "")
         except Exception:
             try:
                 text = " ".join((r.text or "").split())
@@ -199,6 +207,52 @@ class BhoonidhiClient:
                 text = ""
         reason = getattr(r, "reason", "") or ""
         return self._scrub(f"[{reason}] {text}".strip() if text else f"[{reason}]" if reason else "")[:240]
+
+    def _download_request(self, params: dict, style: str, **kwargs):
+        """GET /download presenting the token in the given style (see DOWNLOAD_AUTH_STYLES)."""
+        token = self._ensure_token()
+        headers, query = {}, dict(params)
+        if style == "bearer":
+            headers["Authorization"] = f"Bearer {token}"
+        elif style == "query":
+            query["token"] = token
+        elif style == "token-header":
+            headers["token"] = token
+        else:
+            raise BhoonidhiError(f"unknown download auth style {style!r}")
+        try:
+            return self.session.request("GET", f"{self.base_url}/download", headers=headers, params=query, **kwargs)
+        except requests.RequestException as e:
+            raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
+
+    def probe_download_auth(self, item: Item) -> list[dict]:
+        """Try each way of presenting the token to /download; stop at the first the server accepts (HTTP 200).
+
+        Each attempt reads only the first bytes of the reply and closes it, so nothing is downloaded. Returns one
+        non-secret summary per attempt.
+        """
+        results = []
+        for style in DOWNLOAD_AUTH_STYLES:
+            r = self._download_request({"id": item.id, "collection": item.collection}, style, stream=True,
+                                       timeout=(15, 60), allow_redirects=False)
+            first = b""
+            try:
+                first = next(iter(r.iter_content(chunk_size=200)), b"")
+            finally:
+                close = getattr(r, "close", None)
+                if close:
+                    close()
+            results.append({
+                "style": style,
+                "status": r.status_code,
+                "content_type": r.headers.get("Content-Type"),
+                "content_length": r.headers.get("Content-Length"),
+                "starts_with": "PK (a zip archive)" if first.startswith(b"PK")
+                else self._scrub(" ".join(first[:160].decode("latin-1").split())),
+            })
+            if r.status_code == 200:
+                break
+        return results
 
     def diagnose_download(self, item: Item) -> dict:
         """One request to /download that shows how the server answers, without downloading the file or leaking a secret.
@@ -278,7 +332,10 @@ class BhoonidhiClient:
         for attempt, wait in enumerate((0, *self.retry_waits)):
             if wait:
                 self._sleep(wait)
-            r = self._call("GET", "/download", params=params, stream=True, timeout=(15, 300))
+            if self.download_auth == "bearer":
+                r = self._call("GET", "/download", params=params, stream=True, timeout=(15, 300))
+            else:
+                r = self._download_request(params, self.download_auth, stream=True, timeout=(15, 300))
             if r.status_code in RETRY_STATUSES and attempt < len(self.retry_waits):
                 continue
             if r.status_code == 404:

@@ -77,6 +77,9 @@ class FakeResponse:
         self.closed = True
 
     def iter_content(self, chunk_size=1):
+        if not self._chunks and self._body:  # a small non-file body (such as an error object) streams as its text
+            yield self.text.encode()
+            return
         for n, chunk in enumerate(self._chunks):
             if self._fail_after is not None and n >= self._fail_after:
                 raise requests.exceptions.ChunkedEncodingError("connection broken")
@@ -94,6 +97,7 @@ class FakeBhoonidhi:
         self.calls = []  # (method, path, kwargs)
         self.download_statuses = {}  # item id -> list of statuses to return before success
         self.download_response = None  # optional callable(kwargs) -> FakeResponse, overrides /download entirely
+        self.download_accepts = {"bearer"}  # token styles /download accepts (the specification says bearer)
         self.valid_tokens = set()
         self._n = 0
 
@@ -102,8 +106,15 @@ class FakeBhoonidhi:
         self.calls.append((method, path, kw))
         if path == "/auth/token":
             return self._auth(kw["json"])
-        auth = (kw.get("headers") or {}).get("Authorization", "")
-        if auth.removeprefix("Bearer ") not in self.valid_tokens:
+        headers = kw.get("headers") or {}
+        if path == "/download":  # the token may arrive in different forms; accept only the configured ones
+            sent = {"bearer": headers.get("Authorization", "").removeprefix("Bearer "),
+                    "query": (kw.get("params") or {}).get("token", ""),
+                    "token-header": headers.get("token", "")}
+            if not any(sent[style] in self.valid_tokens for style in self.download_accepts if sent[style]):
+                return FakeResponse(401, {"ErrorCode": "401", "Description": "UNAUTHORIZED",
+                                          "Action": "Invalid session detected! Please login."})
+        elif headers.get("Authorization", "").removeprefix("Bearer ") not in self.valid_tokens:
             return FakeResponse(401, {"ErrorCode": "401", "Description": "session expired"})
         if path == "/data/search":
             return FakeResponse(200, {"type": "FeatureCollection", "features": self.features,

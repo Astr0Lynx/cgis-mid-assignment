@@ -292,3 +292,47 @@ def test_diagnose_download_recognises_a_zip_and_a_refusal(tmp_path):
     api.download_response = lambda kw: FakeResponse(401, headers={"WWW-Authenticate": "Bearer realm=x"}, chunks=[b"nope"])
     refused = client.diagnose_download(item())
     assert refused["status"] == 401 and refused["www_authenticate"] == "Bearer realm=x" and refused["starts_with"] == "nope"
+
+
+# ---- how the token is presented to /download -------------------------------------------------------------------------
+
+def test_probe_finds_the_style_the_server_accepts_and_stops_there(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.download_accepts = {"query"}  # like the portal: the token travels as ?token=
+    client, _ = make_client(api)
+    results = client.probe_download_auth(item())
+    assert [(r["style"], r["status"]) for r in results] == [("bearer", 401), ("query", 200)]  # stopped at the first 200
+    assert results[0]["starts_with"].startswith('{"ErrorCode"') or "Invalid session" in str(results[0])
+    assert results[1]["starts_with"] == "PK (a zip archive)"
+    assert "token-1" not in str(results)  # nothing secret in the report
+
+
+def test_probe_reports_every_refusal_when_nothing_works(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.download_accepts = set()
+    client, _ = make_client(api)
+    results = client.probe_download_auth(item())
+    assert [r["style"] for r in results] == ["bearer", "query", "token-header"]
+    assert all(r["status"] == 401 for r in results)
+
+
+@pytest.mark.parametrize("style", ["query", "token-header"])
+def test_download_works_when_configured_for_the_style_the_server_accepts(tmp_path, style):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.download_accepts = {style}
+    client = BhoonidhiClient("student", "correct-horse", session=api, sleep=lambda s: None, download_auth=style)
+    folder = client.download_scene(item(), tmp_path / "data")
+    assert (folder / "BAND_META.txt").exists()
+
+
+def test_download_with_the_wrong_style_fails_with_the_servers_explanation(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.download_accepts = {"query"}
+    client, _ = make_client(api)  # default bearer
+    with pytest.raises(BhoonidhiError, match="401.*Invalid session detected"):
+        client.download_scene(item(), tmp_path / "data")
+
+
+def test_unknown_download_style_is_rejected_up_front():
+    with pytest.raises(BhoonidhiError, match="unknown download auth style"):
+        BhoonidhiClient("u", "p", download_auth="cookie")

@@ -32,7 +32,8 @@ def get_client() -> BhoonidhiClient:
     with _client_lock:
         if _client is None:
             _client = BhoonidhiClient(os.environ["BHOONIDHI_USER"], os.environ["BHOONIDHI_PASSWORD"],
-                                      base_url=os.environ.get("BHOONIDHI_API_URL", "https://bhoonidhi-api.nrsc.gov.in"))
+                                      base_url=os.environ.get("BHOONIDHI_API_URL", "https://bhoonidhi-api.nrsc.gov.in"),
+                                      download_auth=os.environ.get("BHOONIDHI_DOWNLOAD_AUTH", "bearer"))
         return _client
 
 

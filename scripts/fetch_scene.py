@@ -28,6 +28,9 @@ def main() -> int:
     ap.add_argument("--date", help="acquisition date YYYY-MM-DD (default: the last %d days)" % live_fetch.LOOKBACK_DAYS)
     ap.add_argument("--data-dir", default="data")
     ap.add_argument("--dry-run", action="store_true", help="log in and search only; download nothing")
+    ap.add_argument("--probe-download-auth", action="store_true",
+                    help="try each way of presenting the token to /download (Bearer header, ?token=, token header) "
+                         "and report which one the server accepts; downloads nothing")
     ap.add_argument("--diagnose-download", action="store_true",
                     help="send ONE request to /download and print how the server answers (status, headers, "
                          "redirect target, first bytes); downloads nothing and prints no secrets")
@@ -46,7 +49,7 @@ def main() -> int:
         return 2
     bbox = (minx, miny, maxx, maxy)
 
-    client = BhoonidhiClient(user, password)
+    client = BhoonidhiClient(user, password, download_auth=os.environ.get("BHOONIDHI_DOWNLOAD_AUTH", "bearer"))
     try:
         start, end = (wanted, wanted) if wanted else (None, None)
         if not wanted:
@@ -61,6 +64,19 @@ def main() -> int:
             print(f"  {i.date}  {i.collection:26s} {i.id}  ({covers})")
         if args.dry_run:
             print("Dry run: nothing downloaded.")
+            return 0
+        if args.probe_download_auth:
+            options = live_fetch.candidates(bbox, wanted, client)
+            if not options:
+                print("No scene to probe: none covers the bbox.")
+                return 1
+            print(f"Probing how /download wants the token, using {options[0].id} (nothing is downloaded):")
+            results = client.probe_download_auth(options[0])
+            for r in results:
+                print(f"  {r['style']:13s} status={r['status']}  {r['content_type']}  {r['starts_with']}")
+            worked = [r["style"] for r in results if r["status"] == 200]
+            print(f"RESULT: set BHOONIDHI_DOWNLOAD_AUTH={worked[0]} to use it." if worked
+                  else "RESULT: no style was accepted; paste this output so the client can be adjusted.")
             return 0
         if args.diagnose_download:
             options = live_fetch.candidates(bbox, wanted, client)
