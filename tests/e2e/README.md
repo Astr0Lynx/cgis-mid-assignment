@@ -1,0 +1,12 @@
+# Browser test of the login + fetch workflow
+
+Drives the real web page in Chrome against the real app running with a **fake Bhoonidhi** (no account, no network).
+Not part of CI (it needs Chrome and Node); the Python tests cover the same endpoints without a browser.
+
+```bash
+python scripts/dev_fake_bhoonidhi.py 5056      # terminal 1: the app + a fake Bhoonidhi (password correct-horse, code 123456)
+cd tests/e2e && npm install && node login_flow.js   # terminal 2   (BASE=http://localhost:5056, CHROME=path to chrome.exe)
+```
+Checks: an uncovered box offers a fetch; Run opens the login dialog; the emailed-code step (wrong code rejected, right code
+accepted); the pending Run resumes with a progress bar and shows the result; the password is gone from the page; logout; a
+second visitor reuses the fetched scene without logging in; logging in by choice starts nothing; cancelling fetches nothing.

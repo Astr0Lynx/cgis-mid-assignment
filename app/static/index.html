@@ -17,6 +17,11 @@
         <abbr title="Open Geospatial Consortium Web Processing Service">OGC WPS</abbr>.</p>
     </header>
 
+    <div id="account" class="account" hidden>
+      <span id="account-text"></span>
+      <button id="account-btn" class="btn ghost small"></button>
+    </div>
+
     <section>
       <h2><span class="step">1</span> Area</h2>
       <p class="hint">Click <b>Draw area</b>, then click two opposite corners on the map. The dashed outlines show where
@@ -42,6 +47,7 @@
     </section>
 
     <button id="run" class="btn primary" disabled>Run WPS process</button>
+    <progress id="progress" max="100" value="0" hidden></progress>
     <p id="status" class="status" role="status"></p>
 
     <section id="result" hidden>
@@ -68,11 +74,33 @@
       <p>Resourcesat-2/2A LISS-III data © ISRO-IRS, distributed through
         <a href="https://bhoonidhi.nrsc.gov.in" target="_blank" rel="noopener">Bhoonidhi</a> (NRSC). Basemap ©
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.
-        An unofficial coursework prototype, not part of Bhoonidhi. This instance serves only the prepared scenes shown on the map.</p>
+        An unofficial coursework prototype, not part of Bhoonidhi. This instance serves the prepared scenes outlined on the
+        map; where logging in is enabled it can also fetch a scene for you from your own Bhoonidhi account.</p>
     </footer>
   </aside>
   <div id="map" aria-label="Map"></div>
 </div>
+<dialog id="login">
+  <form id="login-form" autocomplete="off">
+    <h2>Log in to Bhoonidhi</h2>
+    <div id="login-step1">
+      <p class="meta">To fetch a scene from Bhoonidhi, log in with your own Bhoonidhi account. Your password is sent over
+        HTTPS to this server once, only to log in to Bhoonidhi on your behalf; it is not stored or logged. Only do this on
+        an instance you trust.</p>
+      <label>User id <input id="login-user" autocomplete="username" maxlength="200"></label>
+      <label>Password <input id="login-pass" type="password" autocomplete="current-password" maxlength="200"></label>
+    </div>
+    <div id="login-step2" hidden>
+      <p class="meta">Bhoonidhi has emailed a 6-digit code to the address of your account. Enter it here.</p>
+      <label>Code <input id="login-otp" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>
+    </div>
+    <p id="login-error" class="status err" role="alert"></p>
+    <div class="row">
+      <button type="button" id="login-cancel" class="btn ghost">Cancel</button>
+      <button type="submit" id="login-go" class="btn primary">Continue</button>
+    </div>
+  </form>
+</dialog>
 <script src="/static/vendor/leaflet/leaflet.js"></script>
 <script src="/static/app.js"></script>
 </body>

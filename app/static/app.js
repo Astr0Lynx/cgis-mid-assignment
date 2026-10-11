@@ -9,6 +9,10 @@
 
   let info = null, scenes = [], map, coverageLayer, rect = null, cornerA = null, drawing = false;
   let bbox = null, overlay = null, resultUrls = [], theme = null;
+  const FETCH = '__fetch__';  // the date choice meaning "fetch the newest suitable scene from Bhoonidhi"
+  let account = { enabled: false, logged_in: false, otp_pending: false, user: null };
+  let loginDone = null;       // resolves the Run that is waiting for a login (null when the user logged in on their own)
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // ---------- light / dark (panel and basemap together) ----------
   // One keyless basemap (OpenStreetMap). Dark mode darkens its tiles with a CSS filter (see style.css), so the
@@ -75,7 +79,13 @@
       info1.textContent += ` — too large: the limit is ${fmt(info.max_pixels / 1e6, 0)} Mpixel`;
     }
     const cover = coveringScenes(bbox).sort((a, b) => b.properties.date.localeCompare(a.properties.date));
-    if (!cover.length) {
+    if (!cover.length && account.enabled) {
+      date.add(new Option('Newest scene on Bhoonidhi (fetched when you press Run)', FETCH));
+      date.disabled = false;
+      dinfo.className = 'meta';
+      dinfo.textContent = 'No prepared scene covers this area. Pressing Run fetches the newest suitable scene from Bhoonidhi, '
+        + 'which needs you to log in to your own Bhoonidhi account (a download of about 140 MB).';
+    } else if (!cover.length) {
       ok = false;
       date.add(new Option('No prepared scene covers this area', ''));
       date.disabled = true;
@@ -149,8 +159,13 @@
   }
   async function run() {
     if (!bbox) return;
-    const index = $('index').value, date = $('date').value, url = executeUrl(index, date);
     $('run').disabled = true; $('result').hidden = true;
+    let date = $('date').value;
+    if (date === FETCH) {
+      date = await fetchFlow();  // logs in if needed, fetches the scene, returns its date (null if cancelled or failed)
+      if (!date) { refreshRunButton(); return; }
+    }
+    const index = $('index').value, url = executeUrl(index, date);
     $('ogc-url').textContent = `GET ${location.origin}${url}\n\ncurl "${location.origin}${url}"`;
     $('ogc').open = true;
     setStatus('Sending the WPS Execute request and computing…', 'busy');
@@ -198,6 +213,100 @@
     map.fitBounds(L.latLngBounds([b[0], b[1]], [b[2], b[3]]).pad(0.3));
   }
 
+  // ---------- Bhoonidhi account: log in (with the emailed code) and fetch a scene ----------
+  async function api(path, body) {
+    const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }, body: JSON.stringify(body || {}) });
+    let data = {}; try { data = await r.json(); } catch (e) { /* not JSON */ }
+    return { ok: r.ok, status: r.status, data };
+  }
+  async function loadAccount() {
+    try { account = await fetch('/api/session', { credentials: 'same-origin' }).then((r) => r.json()); } catch (e) { /* keep the last state */ }
+    renderAccount();
+  }
+  function renderAccount() {
+    const box = $('account'); box.hidden = !account.enabled;
+    if (!account.enabled) return;
+    $('account-text').textContent = account.logged_in
+      ? `Bhoonidhi account: logged in as ${account.user}` : 'Bhoonidhi account: not logged in (only needed to fetch new scenes)';
+    $('account-btn').textContent = account.logged_in ? 'Log out' : 'Log in';
+  }
+  function openLogin() {
+    $('login-error').textContent = ''; $('login-pass').value = ''; $('login-otp').value = '';
+    $('login-step1').hidden = account.otp_pending; $('login-step2').hidden = !account.otp_pending;
+    $('login-go').disabled = false;
+    const d = $('login'); if (!d.open) d.showModal();
+    (account.otp_pending ? $('login-otp') : $('login-user')).focus();
+  }
+  function closeLogin(ok) {
+    const d = $('login'); if (d.open) d.close();
+    $('login-pass').value = '';  // never keep the password in the page
+    const resolve = loginDone; loginDone = null;
+    if (resolve) resolve(ok);
+  }
+  function ensureLogin() {
+    if (account.logged_in) return Promise.resolve(true);
+    return new Promise((resolve) => { loginDone = resolve; openLogin(); });
+  }
+  async function submitLogin(ev) {
+    ev.preventDefault();
+    const err = $('login-error'); err.textContent = ''; $('login-go').disabled = true;
+    try {
+      let r;
+      if (!account.otp_pending) {
+        r = await api('/api/login', { user: $('login-user').value.trim(), password: $('login-pass').value });
+        $('login-pass').value = '';  // gone from the page as soon as it has been sent
+      } else {
+        r = await api('/api/otp', { code: $('login-otp').value.trim() });
+      }
+      if (!r.ok) { err.textContent = r.data.error || 'Login failed.'; if (r.status === 429 || r.status === 409) { await loadAccount(); } return; }
+      await loadAccount();
+      if (account.logged_in) closeLogin(true);
+      else { account.otp_pending = true; openLogin(); }  // the portal wants the emailed code
+    } catch (e) { err.textContent = 'Could not reach the service.'; }
+    finally { $('login-go').disabled = false; }
+  }
+  async function logout() { await api('/api/logout'); await loadAccount(); }
+
+  async function reloadCoverage() {
+    scenes = await fetch('/api/coverage').then((r) => r.json()).then((c) => c.features);
+    coverageLayer.clearLayers(); coverageLayer.addData({ type: 'FeatureCollection', features: scenes });
+  }
+  function showProgress(v) {
+    const p = $('progress'); p.hidden = false; p.value = v.percent || 0;
+    setStatus(`${v.message} (${v.percent || 0}%)`, 'busy');
+  }
+  // Returns the date of the scene that is now available for the drawn area, or null if cancelled or failed.
+  async function fetchFlow() {
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (!account.logged_in && !(await ensureLogin())) { setStatus('Login cancelled; nothing was fetched.', ''); return null; }
+        setStatus('Starting the fetch from Bhoonidhi…', 'busy');
+        const r = await api('/api/fetch', { bbox: [bbox.s, bbox.w, bbox.n, bbox.e] });
+        if (r.status === 401) { await loadAccount(); continue; }  // the session expired: log in again once
+        if (!r.ok) throw new Error(r.data.error || 'Could not start the fetch.');
+        for (;;) {
+          await sleep(1500);
+          const v = await fetch('/api/fetch/' + r.data.job, { credentials: 'same-origin' }).then((x) => x.json());
+          if (v.error && !v.state) throw new Error(v.error);
+          showProgress(v);
+          if (v.state === 'error') throw new Error(v.error || 'The fetch failed.');
+          if (v.state === 'done') {
+            await reloadCoverage(); refreshArea();
+            if ([...$('date').options].some((o) => o.value === v.scene.date)) $('date').value = v.scene.date;
+            return v.scene.date;
+          }
+        }
+      }
+      throw new Error('Could not log in to Bhoonidhi.');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'err');
+      return null;
+    } finally {
+      $('progress').hidden = true;
+    }
+  }
+
   // ---------- start-up ----------
   function showIndexInfo() {
     const i = info.indices.find((x) => x.name === $('index').value);
@@ -220,6 +329,9 @@
       onEachFeature: (f, layer) => layer.bindTooltip(`${f.properties.date} · ${f.properties.satellite || ''} ${f.properties.sensor || ''}`, { sticky: true }),
     }).addTo(map);
     if (scenes.length) map.fitBounds(coverageLayer.getBounds().pad(0.05));
+    // ?view=lat,lon,zoom opens the map there (handy for sharing a place)
+    const view = (new URLSearchParams(location.search).get('view') || '').split(',').map(Number);
+    if (view.length === 3 && view.every(Number.isFinite)) map.setView([view[0], view[1]], view[2]);
 
     info.indices.forEach((i) => $('index').add(new Option(`${i.name.toUpperCase()} — ${i.title}`, i.name)));
     $('index').addEventListener('change', showIndexInfo); showIndexInfo();
@@ -230,6 +342,11 @@
     $('demo').addEventListener('click', () => { setBbox(DEMO); map.fitBounds(rect.getBounds().pad(0.6)); });
     $('clear').addEventListener('click', clearAll);
     $('run').addEventListener('click', run);
+    $('login-form').addEventListener('submit', submitLogin);
+    $('login-cancel').addEventListener('click', () => closeLogin(false));
+    $('login').addEventListener('cancel', () => closeLogin(false));  // Escape
+    $('account-btn').addEventListener('click', () => (account.logged_in ? logout() : (loginDone = null, openLogin())));
+    await loadAccount();
     $('opacity').addEventListener('input', () => { if (overlay) overlay.setOpacity(parseFloat($('opacity').value)); });
 
     // ?demo=1 (optionally &index=ndwi&date=YYYY-MM-DD) pre-fills the demo area and runs it, for screenshots and rehearsals

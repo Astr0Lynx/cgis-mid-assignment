@@ -96,10 +96,14 @@ def available_area(folder: Path) -> list[tuple[float, float]]:
     """
     scene = Scene(folder)
     m = scene.meta
-    footprint = [(float(m[f"Image{c}Lon"]), float(m[f"Image{c}Lat"])) for c in ("UL", "UR", "LR", "LL")]
     b = scene.bounds
     lons, lats = transform(scene.crs, "EPSG:4326", [b.left, b.right, b.right, b.left], [b.top, b.top, b.bottom, b.bottom])
-    return clip_convex(footprint, list(zip(lons, lats)))
+    raster = list(zip(lons, lats))
+    try:
+        footprint = [(float(m[f"Image{c}Lon"]), float(m[f"Image{c}Lat"])) for c in ("UL", "UR", "LR", "LL")]
+    except (KeyError, ValueError):
+        return raster  # no corner metadata: the extent of the rasters is the best statement of where data exists
+    return clip_convex(footprint, raster)
 
 
 FETCHED_SUBDIR = "_fetched"  # scenes fetched from Bhoonidhi on request: they expire, the permanent cache never does

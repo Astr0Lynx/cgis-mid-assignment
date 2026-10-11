@@ -71,3 +71,15 @@ def test_coverage_only_promises_the_data_that_is_really_on_disk(client, tmp_path
     lons, lats = [p[0] for p in ring], [p[1] for p in ring]
     assert max(lons) - min(lons) < 0.1 and max(lats) - min(lats) < 0.1  # about 7 km, not 2 degrees
     assert min(lons) < 77.5 < max(lons) and min(lats) < 17.5 < max(lats)  # and it is where the raster actually is
+
+
+def test_a_scene_without_corner_metadata_is_still_listed_by_its_raster_extent(client, tmp_path, monkeypatch):
+    """Found by the browser test: such a scene used to vanish from the page's coverage, although the WPS could use it."""
+    from tests.live_helpers import make_scene
+
+    make_scene(tmp_path / "R2301OCT2026999999999900060PSANSTUC00GTDF", "R2301OCT2026999999999900060PSANSTUC00GTDF")
+    monkeypatch.setattr("app.scene.DATA_DIR", tmp_path)
+    features = client.get("/api/coverage").get_json()["features"]
+    assert len(features) == 1
+    ring = features[0]["geometry"]["coordinates"][0]
+    assert max(p[0] for p in ring) - min(p[0] for p in ring) < 0.1  # the 7 km raster, not a made-up footprint

@@ -45,7 +45,10 @@ configuration.CONFIG.set("server", "workdir", str(WORK_DIR))
 STATE_DIR = ROOT / "state"
 STATE_DIR.mkdir(exist_ok=True)
 JOBS_DB = STATE_DIR / "pywps-jobs.sqlite3"
-JOBS_DB.unlink(missing_ok=True)
+try:
+    JOBS_DB.unlink(missing_ok=True)
+except PermissionError:  # another copy of the app on this machine has it open (Windows): use a private file instead
+    JOBS_DB = STATE_DIR / f"pywps-jobs-{os.getpid()}.sqlite3"
 configuration.CONFIG.set("logging", "database", f"sqlite:///{JOBS_DB.as_posix()}")
 
 # Scenes fetched from Bhoonidhi on request live in data/_fetched and expire (the permanent cache is never touched).
