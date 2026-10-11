@@ -158,7 +158,7 @@ class FakeBhoonidhi:
     def _portal_search(self, body):
         from urllib.parse import unquote
 
-        from app.bhoonidhi_client import date_from_id
+        from app.bhoonidhi_client import MONTHS, date_from_id
 
         self.portal_search_bodies.append(body)
         wanted = {unquote(n) for n in body["selSats"].split("%2C")}
@@ -169,7 +169,7 @@ class FakeBhoonidhi:
             d = date_from_id(scene_id)
             records.append({"ID": scene_id, "SATELLITE": self.portal_sat, "SENSOR": self.portal_sensor,
                             "SELECTION": sorted(self.portal_selections)[0], "FILENAME": scene_id,
-                            "DIRPATH": f"/data/{self.portal_sat}/{self.portal_sensor}/{d.year}/{d.month:02d}/{d.day:02d}/{scene_id}",
+                            "DIRPATH": f"/imgarchive/PRODUCTJPGS//{self.portal_sat}/{self.portal_sensor}/{d.year}/{MONTHS[d.month - 1]}/{d.day:02d}/",
                             "PRICED": "OpenData_LISS3", "TABLETYPE": "PMETA", "srt": "x"})
         return FakeResponse(200, {"Results": records})
 

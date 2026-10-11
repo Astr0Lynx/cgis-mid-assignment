@@ -45,6 +45,7 @@ PORTAL_SEARCH_PATH = "/bhoonidhi/ProductSearch"  # the portal's own search; it r
 PORTAL_SENSOR_CODES = {("R2A", "LIS3"): "3", ("RS2", "LIS3"): "3", ("R2A", "LIS4"): "F", ("RS2", "LIS4"): "F",
                        ("R2A", "AWIF"): "W", ("RS2", "AWIF"): "W"}
 PORTAL_RECORD_FIELDS = ("ID", "SATELLITE", "SENSOR", "SELECTION", "DIRPATH", "FILENAME", "PRICED", "TABLETYPE")
+MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")  # the portal names months, not numbers
 PORTAL_LOGIN_PATH = "/bhoonidhi/LoginServlet"  # the portal's own login, separate from the official API login
 PORTAL_LISS3_SENSOR = "3"  # the portal's short code for the LISS-III sensor in its data path
 AUTH_ERRORS = {
@@ -308,7 +309,7 @@ class BhoonidhiClient:
         display names for the products, for example "ResourceSat-2_LISS3_L2".
         """
         minx, miny, maxx, maxy = bbox
-        stamp = f"{day.strftime('%b').upper()}%2F{day.day:02d}%2F{day.year}"
+        stamp = f"{MONTHS[day.month - 1]}%2F{day.day:02d}%2F{day.year}"
         payload = {
             "userId": "T", "prod": "Standard",
             "selSats": "%2C".join(quote("".join(name.split()), safe="") for name in selections),
@@ -347,7 +348,10 @@ class BhoonidhiClient:
         name = str(record.get("FILENAME") or record.get("ID") or "")
         if not (satellite and sensor and name):
             return []
-        parts = str(record.get("DIRPATH") or "").strip("/").split("/")[-4:][:2]  # year and month, no day folder
+        # Year and month are the first two of the last four path pieces, EXACTLY as the unofficial client does it. The real
+        # directory ends with a slash ("/imgarchive/PRODUCTJPGS//RS2/LIS3/2026/OCT/09/"), so stripping it would shift the
+        # window by one piece and pick LIS3/2026. The month is a name (OCT), not a number.
+        parts = str(record.get("DIRPATH") or "").split("/")[-4:][:2]
         year, month = (parts + ["", ""])[:2]
         code = PORTAL_SENSOR_CODES.get((satellite, sensor), sensor)
         return [f"{self.portal_url}/bhoonidhi/data/{satellite}/{code}/{year}/{month}/{name}.zip"]
@@ -366,7 +370,7 @@ class BhoonidhiClient:
             return []
         first = item.date.replace(day=1)
         months = [first, first - timedelta(days=1)]
-        return [f"{self.portal_url}/bhoonidhi/data/{satellite}/{PORTAL_LISS3_SENSOR}/{m.year}/{m.month:02d}/{item.id}.zip"
+        return [f"{self.portal_url}/bhoonidhi/data/{satellite}/{PORTAL_LISS3_SENSOR}/{m.year}/{MONTHS[m.month - 1]}/{item.id}.zip"
                 for m in months]
 
     def _portal_get(self, url: str, item: Item, **kwargs):

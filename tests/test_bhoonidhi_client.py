@@ -345,19 +345,19 @@ def test_portal_candidates_follow_the_inferred_layout():
     client, _ = make_client(FakeBhoonidhi())
     urls = client.portal_candidates(item())  # scene of 23 May 2026, ResourceSat-2
     assert [u.split("nrsc.gov.in")[1] for u in urls] == [
-        f"/bhoonidhi/data/RS2/3/2026/05/{SCENE}.zip", f"/bhoonidhi/data/RS2/3/2026/04/{SCENE}.zip"]
+        f"/bhoonidhi/data/RS2/3/2026/MAY/{SCENE}.zip", f"/bhoonidhi/data/RS2/3/2026/APR/{SCENE}.zip"]
     twoa = Item("RA302OCT2026050952010000060PSANSTUC00GTDF", "ResourceSat-2A_LISS3_L2", date(2026, 10, 2), None, True)
-    assert client.portal_candidates(twoa)[0].endswith("/bhoonidhi/data/R2A/3/2026/10/" + twoa.id + ".zip")
+    assert client.portal_candidates(twoa)[0].endswith("/bhoonidhi/data/R2A/3/2026/OCT/" + twoa.id + ".zip")
     assert client.portal_candidates(Item("x", "Sentinel-2_MSI", date(2026, 1, 1), None, True)) == []
 
 
 def test_portal_probe_tries_the_previous_month_and_reports_no_secret(tmp_path):
     api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
-    api.portal_paths = {f"/bhoonidhi/data/RS2/3/2026/04/{SCENE}.zip"}  # only the earlier month exists
+    api.portal_paths = {f"/bhoonidhi/data/RS2/3/2026/APR/{SCENE}.zip"}  # only the earlier month exists
     client, _ = make_client(api)
     results = client.probe_portal_download(item())
     assert [r["status"] for r in results] == [404, 200]  # stopped at the first 200
-    assert results[1]["starts_with"] == "PK (a zip archive)" and results[1]["path"].endswith(f"2026/04/{SCENE}.zip")
+    assert results[1]["starts_with"] == "PK (a zip archive)" and results[1]["path"].endswith(f"2026/APR/{SCENE}.zip")
     assert "token-1" not in str(results) and "portaljwt" not in str(results)
 
 
@@ -481,21 +481,21 @@ def test_find_portal_record_returns_none_for_a_scene_the_portal_does_not_list():
 def test_address_from_a_record_follows_the_unofficial_clients_rule():
     client = portal_client(FakeBhoonidhi())
     record = {"ID": SCENE, "FILENAME": SCENE, "SATELLITE": "RS2", "SENSOR": "LIS3",
-              "DIRPATH": "/data/RS2/LIS3/2026/05/23/" + SCENE}
+              "DIRPATH": "/imgarchive/PRODUCTJPGS//RS2/LIS3/2026/MAY/23/"}
     assert client.portal_candidates_from(record) == [
-        f"https://bhoonidhi.nrsc.gov.in/bhoonidhi/data/RS2/3/2026/05/{SCENE}.zip"]  # LIS3 -> 3; year/month from DIRPATH
+        f"https://bhoonidhi.nrsc.gov.in/bhoonidhi/data/RS2/3/2026/MAY/{SCENE}.zip"]  # LIS3 -> 3; year/month from DIRPATH
     assert client.portal_candidates_from({"ID": SCENE}) == []  # not enough information: no guessing
 
 
 def test_download_uses_the_portals_real_layout_not_the_inferred_one(tmp_path):
     api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
     api.portal_sat = "R2A"  # differs from the inferred "RS2": the inferred address would be a 404
-    api.portal_paths = {f"/bhoonidhi/data/R2A/3/2026/05/{SCENE}.zip"}
+    api.portal_paths = {f"/bhoonidhi/data/R2A/3/2026/MAY/{SCENE}.zip"}
     client = portal_client(api)
     folder = client.download_scene(item(), tmp_path / "data", bbox=BBOX)
     assert (folder / "BAND_META.txt").exists()
     # the same download without a search area has nothing to ask the portal and falls back to the inferred layout
-    with pytest.raises(BhoonidhiError, match="portal has no file at /bhoonidhi/data/RS2/3/2026/05/"):
+    with pytest.raises(BhoonidhiError, match="portal has no file at /bhoonidhi/data/RS2/3/2026/MAY/"):
         portal_client(api).download_scene(item("R2318MAY2026078246009900060PSANSTUC00GTDF"), tmp_path / "d2")
 
 
@@ -505,3 +505,22 @@ def test_download_falls_back_to_the_inferred_layout_when_the_portal_does_not_lis
     client = portal_client(api)
     folder = client.download_scene(item(), tmp_path / "data", bbox=BBOX)
     assert (folder / "BAND_META.txt").exists()
+
+
+def test_address_from_the_real_portal_record_seen_on_2026_10_10():
+    """Golden test: the record Bhoonidhi's portal actually returned for a ResourceSat-2 LISS-III scene."""
+    real = {
+        "ID": "R2309OCT2026080292009900060PSANSTUC00GTDF", "SATELLITE": "RS2", "SENSOR": "LIS3",
+        "SELECTION": "ResourceSat-2_LISS3_L2", "DIRPATH": "/imgarchive/PRODUCTJPGS//RS2/LIS3/2026/OCT/09/",
+        "FILENAME": "R2309OCT2026080292009900060PSANSTUC00GTDF", "PRICED": "OpenData_DirectDownload", "TABLETYPE": "PMETA",
+    }
+    assert portal_client(FakeBhoonidhi()).portal_candidates_from(real) == [
+        "https://bhoonidhi.nrsc.gov.in/bhoonidhi/data/RS2/3/2026/OCT/R2309OCT2026080292009900060PSANSTUC00GTDF.zip"]
+    # the bug this guards against: stripping the trailing slash shifted the window to ('LIS3', '2026')
+    assert "/LIS3/2026/R2309" not in portal_client(FakeBhoonidhi()).portal_candidates_from(real)[0]
+
+
+def test_month_names_do_not_depend_on_the_locale():
+    from app.bhoonidhi_client import MONTHS
+
+    assert MONTHS[9] == "OCT" and len(MONTHS) == 12 and all(len(m) == 3 and m.isupper() for m in MONTHS)
