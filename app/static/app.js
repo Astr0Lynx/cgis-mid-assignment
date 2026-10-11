@@ -8,7 +8,25 @@
   const $ = (id) => document.getElementById(id);
 
   let info = null, scenes = [], map, coverageLayer, rect = null, cornerA = null, drawing = false;
-  let bbox = null, overlay = null, resultUrls = [];
+  let bbox = null, overlay = null, resultUrls = [], theme = null;
+
+  // ---------- light / dark (panel and basemap together) ----------
+  // One keyless basemap (OpenStreetMap). Dark mode darkens its tiles with a CSS filter (see style.css), so the
+  // result overlay keeps its true colours and no tile provider account is needed.
+  function initialTheme() {
+    const asked = new URLSearchParams(location.search).get('theme');
+    if (asked === 'light' || asked === 'dark') return asked;
+    try { const saved = localStorage.getItem('theme'); if (saved === 'light' || saved === 'dark') return saved; } catch (e) { /* storage blocked */ }
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  function applyTheme(t) {
+    theme = t;
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('theme', t); } catch (e) { /* storage blocked */ }
+    $('theme').textContent = t === 'dark' ? 'Light mode' : 'Dark mode';
+    if (map) map.getContainer().classList.toggle('dark-tiles', t === 'dark');
+  }
+  document.documentElement.dataset.theme = initialTheme();  // before the map exists, so the panel never flashes
 
   // ---------- helpers ----------
   function setStatus(text, kind) { const s = $('status'); s.textContent = text || ''; s.className = 'status ' + (kind || ''); }
@@ -195,6 +213,8 @@
 
     map = L.map('map', { zoomControl: true }).setView([17.4, 78.45], 9);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(map);
+    applyTheme(document.documentElement.dataset.theme);
+    $('theme').addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));
     coverageLayer = L.geoJSON({ type: 'FeatureCollection', features: scenes }, {
       style: { color: '#1c7ed6', weight: 1.5, dashArray: '6 4', fill: false },
       onEachFeature: (f, layer) => layer.bindTooltip(`${f.properties.date} · ${f.properties.satellite || ''} ${f.properties.sensor || ''}`, { sticky: true }),

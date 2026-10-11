@@ -2,10 +2,15 @@
   --bg: #ffffff; --panel: #f6f8fa; --ink: #1f2933; --muted: #5f6b76; --line: #d8dee4;
   --accent: #0b6e69; --accent-ink: #ffffff; --warn: #9a3412; --err: #b42318; --ok: #1a7f37;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #0f1419; --panel: #161b22; --ink: #e6edf3; --muted: #9aa6b2; --line: #2b333c;
+/* The script always sets data-theme (light or dark); without script the system setting decides. */
+:root[data-theme="dark"] { --bg: #0f1419; --panel: #161b22; --ink: #e6edf3; --muted: #9aa6b2; --line: #2b333c;
           --accent: #2bb3a8; --accent-ink: #06201e; --warn: #f0a35b; --err: #ff7b72; --ok: #56d364; }
-}
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { --bg: #0f1419; --panel: #161b22; --ink: #e6edf3; --muted: #9aa6b2; --line: #2b333c;
+          --accent: #2bb3a8; --accent-ink: #06201e; --warn: #f0a35b; --err: #ff7b72; --ok: #56d364; } }
+.btn.small { padding: 3px 9px; font-size: 12px; }
+header { position: relative; }
+#theme { position: absolute; top: 0; right: 0; }
+h1 { padding-right: 96px; }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
@@ -45,6 +50,8 @@ pre { white-space: pre-wrap; word-break: break-all; background: var(--bg); borde
       padding: 8px; font: 11.5px/1.4 ui-monospace, Consolas, monospace; }
 footer { margin-top: 20px; font-size: 11.5px; color: var(--muted); }
 .leaflet-container { font: inherit; }
+#map.dark-tiles { background: #1d1f21; }
+#map.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.8); }
 .scene-label { background: transparent; border: 0; box-shadow: none; color: #1f2933; font-weight: 600; font-size: 11px; text-shadow: 0 0 3px #fff; }
 @media (max-width: 760px) {
   #app { flex-direction: column-reverse; }
