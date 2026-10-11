@@ -85,7 +85,7 @@ emails a one-time code at login). It also checks the pixels: Bhoonidhi listed on
 image is tilted and had no data there, and it was refused."
 
 **Live fetch from the page (local instance only, the one with login switched on).** Start it beforehand in its own
-terminal: `BROWSER_LOGIN=1 python -m app.server` (PowerShell: `$env:BROWSER_LOGIN="1"; python -m app.server`) and open
+terminal: `BROWSER_LOGIN=1 .venv/Scripts/python -m app.server` (PowerShell: `$env:BROWSER_LOGIN="1"; ..venvScriptspython -m app.server`) and open
 `http://localhost:5000/`. Draw a box outside the outlined scenes (for example over Vijayawada or Warangal, inside a
 real Bhoonidhi scene), leave the date on "Newest scene on Bhoonidhi", press **Run**. The dialog asks for your Bhoonidhi
 user id and password, then for the code Bhoonidhi emails you; type it in the page and the run continues by itself with a
