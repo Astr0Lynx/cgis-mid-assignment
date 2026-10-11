@@ -131,3 +131,18 @@ def test_a_new_login_replaces_the_old_session(web):
     post(c, "/api/login", CREDS)
     post(c, "/api/login", CREDS)
     assert webauth.store.count() == 1
+
+
+def test_rate_limit_uses_the_real_client_address_only_behind_a_trusted_proxy(web, monkeypatch):
+    c, api, clock = web
+    wrong = {"user": "student", "password": "nope"}
+
+    def attempts(n, forwarded):
+        return [post(c, "/api/login", wrong, {**HEADERS, "X-Forwarded-For": forwarded}).status_code for _ in range(n)]
+
+    # not trusted: a client-supplied header must not let anyone dodge the limit
+    assert 429 in attempts(12, "9.9.9.9") and 429 in attempts(1, "8.8.8.8")
+    webauth.store.__init__()
+    monkeypatch.setenv("TRUST_PROXY", "1")
+    assert 429 in attempts(12, "1.1.1.1")                 # one real visitor is limited...
+    assert 429 not in attempts(1, "spoof, 2.2.2.2")       # ...another is not (the proxy's entry is the last one)

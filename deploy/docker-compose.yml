@@ -1,0 +1,24 @@
+# The service plus Caddy, which gets and renews a free HTTPS certificate by itself (Let's Encrypt).
+# Run from the repo root on the VM:  docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+# deploy/.env holds only the public host name (DOMAIN=...). Never put Bhoonidhi credentials anywhere on the server.
+services:
+  app:
+    build: ..
+    restart: unless-stopped
+    environment:
+      PUBLIC_BASE_URL: https://${DOMAIN}
+      BROWSER_LOGIN: "1"     # visitors log in with their OWN Bhoonidhi account, on the page (HTTPS only)
+      TRUST_PROXY: "1"       # rate limits use the visitor's address as Caddy reports it
+    expose: ["5000"]         # reachable only by Caddy, not from the internet
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data     # keeps the certificate across restarts
+    depends_on: [app]
+volumes:
+  caddy_data:

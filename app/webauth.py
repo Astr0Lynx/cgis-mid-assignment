@@ -119,6 +119,16 @@ def _fail(message: str, status: int):
     return jsonify({"error": message}), status
 
 
+def client_ip() -> str:
+    """The caller's address for rate limiting. Behind our own reverse proxy (TRUST_PROXY=1) the real address is the last
+    X-Forwarded-For entry, which the proxy appended; otherwise every visitor would share the proxy's address."""
+    if os.environ.get("TRUST_PROXY") == "1":
+        forwarded = [a.strip() for a in request.headers.get("X-Forwarded-For", "").split(",") if a.strip()]
+        if forwarded:
+            return forwarded[-1]
+    return request.remote_addr or "?"
+
+
 def _guard():
     """Common checks for the state-changing endpoints; returns an error response or None."""
     if not enabled():
@@ -126,7 +136,7 @@ def _guard():
     # A custom header cannot be sent by another site's form or image tag; with SameSite cookies this blocks CSRF.
     if request.headers.get("X-Requested-With") != "XMLHttpRequest" or not request.is_json:
         return _fail("Bad request.", 400)
-    if not store.allow_attempt(request.remote_addr or "?"):
+    if not store.allow_attempt(client_ip()):
         return _fail("Too many attempts; wait a minute.", 429)
     return None
 
