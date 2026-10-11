@@ -29,10 +29,15 @@ Bhoonidhi, from the map page or the command line (section 4).
 - A web portal (Browse & Order) for humans.
 - A [Bhoonidhi API](https://bhoonidhi.nrsc.gov.in/bhoonidhi-api/): JWT authentication, a **STAC** search
   (`/data/collections`, `/data/search`) and a `/download` endpoint that returns the full product archive.
+- A **Processing Tools** page (seen in the portal's menu on 2026-10-11) with *downloadable desktop utilities*: HDF-to-TIFF
+  and NetCDF-to-GeoTIFF conversion, a DEM height conversion (WGS84 ellipsoidal to EGM96), a SAR toolbox (SARPOLTOOL), an
+  EOS-04 ScanSAR mosaicking utility and an image viewer. They are programs you install and run on your own machine on data you
+  already downloaded, for format conversion and SAR work; none of the ones I saw computes spectral indices, and none is a web service.
 - Data is raw: a LISS-III product is a zip of four band GeoTIFFs (`BAND2..5.tif`, ~110 MB each) plus `BAND_META.txt`.
 
 ### What does not exist
-Nothing in the API specification computes anything from the data. Probing the portal host for OGC endpoints
+Nothing in the API specification computes anything from the data, and the desktop utilities above are offline tools, not
+an online service. Probing the portal host for OGC endpoints
 (unauthenticated `GET`, 2026-10-05):
 
 | Path on `bhoonidhi.nrsc.gov.in` | Result |
@@ -40,7 +45,8 @@ Nothing in the API specification computes anything from the data. Probing the po
 | `/wms`, `/wcs`, `/csw`, `/wps`, `/processes`, `/ogcapi`, `/conformance` | 404 |
 | `/bhoonidhi-api/wps`, `/bhoonidhi-api/processes`, `/bhoonidhi-api/conformance` | 404 |
 
-The API documentation lists STAC search and download only. This is absence of evidence, not a proof; I found no
+The API documentation lists STAC search and download only. This is absence of evidence, not a proof (I have also not
+used every part of the portal, and a web-based processing feature behind a login could exist); I found no
 Bhoonidhi WPS / OGC API - Processes service in the documentation or in searches.
 
 ### What a developer has to do today for "NDVI over my district"
