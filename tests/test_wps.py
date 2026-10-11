@@ -149,7 +149,7 @@ def test_unknown_output_is_an_ogc_exception_not_a_500(client, param):
     r = client.get(EXEC + f"&{param}=nope")
     assert r.status_code == 400
     assert b"ExceptionReport" in r.data and b"InvalidParameterValue" in r.data
-    assert b"ndvi, stats" in r.data  # tells the client what is available
+    assert b"ndvi, preview, stats" in r.data  # tells the client what is available
 
 
 def test_unknown_output_over_post(client):

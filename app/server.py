@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 
 import app  # noqa: F401  (pins PROJ/GDAL data first)
-from flask import Flask, request, send_from_directory
+from datetime import datetime
+
+from flask import Flask, jsonify, request, send_from_directory
 from lxml import etree
 from pywps import Service, configuration
 from pywps.exceptions import InvalidParameterValue
@@ -99,13 +101,48 @@ def outputs(filename):
     return send_from_directory(OUT_DIR, filename)
 
 
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
 @flask_app.route("/")
 def index():
-    return (
-        "<h1>Bhoonidhi WPS</h1>"
-        f'<p><a href="{BASE_URL}/wps?service=WPS&request=GetCapabilities">GetCapabilities</a></p>'
-        f'<p><a href="{BASE_URL}/wps?service=WPS&version=1.0.0&request=DescribeProcess&identifier=ndvi">DescribeProcess ndvi</a></p>'
-    )
+    """The interactive map page: a client of the WPS at /wps (everything it does is an ordinary WPS request)."""
+    return send_from_directory(STATIC_DIR, "index.html")
+
+
+@flask_app.route("/api/info")
+def api_info():
+    """What the page needs to know about the service: the indices it offers and its limits."""
+    from app.indices import INDICES
+    from app.processes.ndvi import MAX_PIXELS
+
+    return jsonify({
+        "indices": [{"name": i.name, "title": i.title, "formula": i.formula, "meaning": i.meaning}
+                    for i in INDICES.values()],
+        "max_pixels": MAX_PIXELS, "resolution_m": 24, "radiometry": "radiance",
+    })
+
+
+@flask_app.route("/api/coverage")
+def api_coverage():
+    """Footprints of the scenes this instance has prepared (true image corners, so tilted edges are visible)."""
+    from app.radiometry import parse_band_meta
+    from app.scene import DATA_DIR
+
+    features = []
+    for meta_file in sorted(Path(DATA_DIR).glob("*/BAND_META.txt")):
+        try:
+            m = parse_band_meta(meta_file)
+            corners = [(float(m[f"Image{c}Lon"]), float(m[f"Image{c}Lat"])) for c in ("UL", "UR", "LR", "LL")]
+            when = datetime.strptime(m["DateOfPass"], "%d-%b-%Y").date().isoformat()
+        except (KeyError, ValueError):
+            continue  # a folder without usable metadata is simply not listed
+        features.append({"type": "Feature",
+                         "geometry": {"type": "Polygon", "coordinates": [[*corners, corners[0]]]},
+                         "properties": {"id": m.get("OTSProductID", meta_file.parent.name), "date": when,
+                                        "satellite": m.get("SatID"), "sensor": m.get("Sensor")}})
+    features.sort(key=lambda f: f["properties"]["date"], reverse=True)
+    return jsonify({"type": "FeatureCollection", "features": features})
 
 
 if __name__ == "__main__":

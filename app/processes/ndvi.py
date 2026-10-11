@@ -18,11 +18,13 @@ from pywps.inout.literaltypes import AnyValue
 from app import live_fetch
 from app.bhoonidhi_client import BhoonidhiError
 from app.indices import INDICES
+from app.preview import render_preview
 from app.radiometry import MODES, EsunNotConfigured
 from app.scene import DATA_DIR, find_scenes, write_cog
 
 GEOTIFF = Format("image/tiff; subtype=geotiff", extension=".tif")
 JSON = Format("application/json", extension=".json")
+PNG = Format("image/png", extension=".png")
 
 MAX_PIXELS = int(os.environ.get("MAX_PIXELS", 16_000_000))  # keeps memory bounded (~100 MB per float32 band)
 
@@ -103,6 +105,10 @@ class IndexProcess(Process):
         outputs = [
             NamedComplexOutput(output_id, out_title, supported_formats=[GEOTIFF], as_reference=True,
                                abstract="Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS."),
+            NamedComplexOutput("preview", "Colour preview", supported_formats=[PNG], as_reference=True,
+                               abstract="PNG in latitude/longitude for display on a web map: no-data is transparent and the "
+                                        "colours are stretched between the 2nd and 98th percentile, so they show relative "
+                                        "contrast only. Its map bounds and legend are in the stats output."),
             ComplexOutput("stats", "Index statistics", supported_formats=[JSON],
                           abstract="Index, scene id, acquisition date, and min/mean/max/valid fraction of the output."),
         ]
@@ -163,6 +169,7 @@ class IndexProcess(Process):
         valid = clip.data[np.isfinite(clip.data)]
         if valid.size == 0:
             raise ProcessError("The selected scene has no valid pixels in this bbox")
+        pv = render_preview(clip.data, clip.transform, clip.crs, name)
         stats = {
             "index": name,
             "formula": INDICES[name].formula,
@@ -173,8 +180,11 @@ class IndexProcess(Process):
             "min": float(valid.min()), "mean": float(valid.mean()), "max": float(valid.max()),
             "valid_fraction": float(valid.size / clip.data.size),
             "radiometry": mode,
+            "preview": {"bounds_south_west_north_east": list(pv.bounds), "vmin": pv.vmin, "vmax": pv.vmax,
+                        "ramp": pv.ramp, "note": "colours are a per-request percentile stretch: relative contrast only"},
         }
         response.outputs[self.output_id].data = Path(out).read_bytes()
+        response.outputs["preview"].data = pv.png
         response.outputs["stats"].data = json.dumps(stats)
         return response
 

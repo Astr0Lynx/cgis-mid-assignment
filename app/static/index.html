@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bhoonidhi WPS Explorer</title>
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <aside id="panel">
+    <header>
+      <h1>Bhoonidhi WPS Explorer</h1>
+      <p class="sub">Spectral indices from ISRO's Resourcesat-2 LISS-III, computed on demand through a standard
+        <abbr title="Open Geospatial Consortium Web Processing Service">OGC WPS</abbr>.</p>
+    </header>
+
+    <section>
+      <h2><span class="step">1</span> Area</h2>
+      <p class="hint">Click <b>Draw area</b>, then click two opposite corners on the map. The dashed outlines show where
+        prepared scenes exist.</p>
+      <div class="row">
+        <button id="draw" class="btn">Draw area</button>
+        <button id="demo" class="btn ghost">Use central Hyderabad</button>
+        <button id="clear" class="btn ghost" title="Remove the box and the result">Clear</button>
+      </div>
+      <p id="bbox-info" class="meta">No area selected.</p>
+    </section>
+
+    <section>
+      <h2><span class="step">2</span> Scene date</h2>
+      <select id="date" disabled><option>Draw an area first</option></select>
+      <p id="date-info" class="meta"></p>
+    </section>
+
+    <section>
+      <h2><span class="step">3</span> Index</h2>
+      <select id="index"></select>
+      <p id="index-info" class="meta"></p>
+    </section>
+
+    <button id="run" class="btn primary" disabled>Run WPS process</button>
+    <p id="status" class="status" role="status"></p>
+
+    <section id="result" hidden>
+      <h2>Result</h2>
+      <div id="legend"><div id="legend-bar"></div><div class="legend-labels"><span id="lg-min"></span><span id="lg-max"></span></div></div>
+      <p class="meta">Colours are a stretch between the 2nd and 98th percentile of this result: they show relative
+        contrast, not absolute values (indices are computed on at-sensor radiance).</p>
+      <label class="slider">Opacity <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85"></label>
+      <table id="stats"></table>
+      <p class="links" id="links"></p>
+    </section>
+
+    <details id="ogc">
+      <summary>The WPS request behind this</summary>
+      <p class="meta">Everything this page does is an ordinary OGC WPS 1.0.0 request, so any WPS client can do the same.</p>
+      <pre id="ogc-url">Run a process to see the request.</pre>
+      <p class="links">
+        <a href="/wps?service=WPS&request=GetCapabilities" target="_blank" rel="noopener">GetCapabilities</a> ·
+        <a href="/wps?service=WPS&version=1.0.0&request=DescribeProcess&identifier=spectral-index" target="_blank" rel="noopener">DescribeProcess</a>
+      </p>
+    </details>
+
+    <footer>
+      <p>Resourcesat-2/2A LISS-III data © ISRO-IRS, distributed through
+        <a href="https://bhoonidhi.nrsc.gov.in" target="_blank" rel="noopener">Bhoonidhi</a> (NRSC). Basemap ©
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.
+        An unofficial coursework prototype, not part of Bhoonidhi. This instance serves only the prepared scenes shown on the map.</p>
+    </footer>
+  </aside>
+  <div id="map" aria-label="Map"></div>
+</div>
+<script src="/static/vendor/leaflet/leaflet.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
