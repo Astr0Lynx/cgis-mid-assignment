@@ -23,6 +23,13 @@ from app import live_fetch  # noqa: E402
 from app.bhoonidhi_client import BhoonidhiClient, BhoonidhiError, footprint_contains_bbox, load_env_file  # noqa: E402
 
 
+def ask_otp() -> str:
+    try:
+        return input("Bhoonidhi emailed you a 6-digit one-time code. Enter it here: ")
+    except EOFError:
+        raise BhoonidhiError("a one-time code is needed but there is no terminal to type it in")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--bbox", required=True, help="miny,minx,maxy,maxx in degrees (latitude first)")
@@ -33,8 +40,8 @@ def main() -> int:
                     help="try each way of presenting the token to /download (Bearer header, ?token=, token header) "
                          "and report which one the server accepts; downloads nothing")
     ap.add_argument("--probe-portal-download", action="store_true",
-                    help="ask the portal's own data path (what the unofficial client uses) for the scene with your API "
-                         "token; reads only the first bytes, downloads nothing")
+                    help="log in to the portal itself, then ask its own data path (what the unofficial client uses) for the scene; "
+                         "reads only the first bytes, downloads nothing")
     ap.add_argument("--settle", type=float, default=0.0, metavar="SECONDS",
                     help="with --probe-download-auth: wait this long after login and search before asking /download")
     ap.add_argument("--diagnose-download", action="store_true",
@@ -55,7 +62,8 @@ def main() -> int:
         return 2
     bbox = (minx, miny, maxx, maxy)
 
-    client = BhoonidhiClient(user, password, download_auth=os.environ.get("BHOONIDHI_DOWNLOAD_AUTH", "bearer"))
+    client = BhoonidhiClient(user, password, download_auth=os.environ.get("BHOONIDHI_DOWNLOAD_AUTH", "bearer"),
+                              otp_prompt=ask_otp)
     try:
         start, end = (wanted, wanted) if wanted else (None, None)
         if not wanted:
@@ -76,7 +84,10 @@ def main() -> int:
             if not options:
                 print("No scene to probe: none covers the bbox.")
                 return 1
-            print(f"Asking the portal's data path for {options[0].id} with your API token (nothing is downloaded):")
+            print("Logging in to the portal itself (a separate login from the API's) ...")
+            client.portal_login()
+            print("Portal login worked (the session token is not shown).")
+            print(f"Asking the portal's data path for {options[0].id} (nothing is downloaded):")
             results = client.probe_portal_download(options[0])
             for r in results:
                 print(f"  {r['path']}\n      status={r['status']}  {r['content_type']}  length={r['content_length']}"

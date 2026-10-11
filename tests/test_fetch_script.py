@@ -24,7 +24,8 @@ def run(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("BHOONIDHI_USER", "student")
     monkeypatch.setenv("BHOONIDHI_PASSWORD", "correct-horse")
 
-    def go(*argv):
+    def go(*argv, portal_otp=False):
+        api.portal_otp = portal_otp  # make the fake portal demand an emailed one-time code
         monkeypatch.setattr(sys, "argv", ["fetch_scene.py", *argv])
         code = mod.main()
         return code, capsys.readouterr().out, api
@@ -87,5 +88,29 @@ def test_settle_waits_after_login_before_probing(run, monkeypatch):
 def test_probe_portal_download_prints_paths_and_the_setting_to_use(run, tmp_path):
     code, out, api = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-portal-download")
     assert code == 0 and f"/bhoonidhi/data/RS2/3/2026/05/{SCENE}.zip" in out and "status=200" in out
+    assert "Portal login worked" in out and "portaljwt" not in out
     assert "BHOONIDHI_DOWNLOAD_AUTH=portal" in out
     assert not (tmp_path / "data").exists() and "token-" not in out and "correct-horse" not in out
+
+
+def test_probe_portal_download_handles_the_emailed_code(run, monkeypatch):
+    import builtins
+
+    prompts = []
+    monkeypatch.setattr(builtins, "input", lambda prompt="": prompts.append(prompt) or "123456")
+    code, out, api = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-portal-download",
+                         portal_otp=True)
+    assert code == 0 and "Portal login worked" in out and "status=200" in out
+    assert len(prompts) == 1 and "6-digit one-time code" in prompts[0]  # asked exactly once
+
+
+def test_probe_portal_download_without_a_terminal_explains_the_code(run, monkeypatch):
+    import builtins
+
+    def no_terminal(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr(builtins, "input", no_terminal)
+    code, out, _ = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-portal-download",
+                       portal_otp=True)
+    assert code == 1 and "one-time code is needed but there is no terminal" in out

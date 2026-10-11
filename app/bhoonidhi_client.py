@@ -13,13 +13,14 @@ Facts taken from the specification, and what this code does about them:
              GeoTIFFs and BAND_META.txt and fails with a clear message for anything else.
   The credentials are read from the environment by the caller and are never logged or put in error messages.
 """
+import json
 import re
 import shutil
 import time
 import zipfile
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from pathlib import Path
 
 import requests
@@ -38,6 +39,7 @@ API_AUTH_STYLES = ("bearer", "query", "token-header")  # ways to call the offici
 DOWNLOAD_AUTH_STYLES = API_AUTH_STYLES + ("portal",)
 PORTAL_URL = "https://bhoonidhi.nrsc.gov.in"
 PORTAL_SATELLITE = {"ResourceSat-2_LISS3_L2": "RS2", "ResourceSat-2A_LISS3_L2": "R2A"}  # the portal's SATELLITE codes
+PORTAL_LOGIN_PATH = "/bhoonidhi/LoginServlet"  # the portal's own login, separate from the official API login
 PORTAL_LISS3_SENSOR = "3"  # the portal's short code for the LISS-III sensor in its data path
 AUTH_ERRORS = {
     400: "the request keys were rejected",
@@ -101,11 +103,13 @@ def footprint_contains_bbox(geometry: dict | None, bbox) -> bool:
 class BhoonidhiClient:
     def __init__(self, user: str, password: str, base_url: str = BASE_URL, session=None,
                  sleep=time.sleep, clock=time.monotonic, retry_waits=(5, 20, 60), download_auth: str = "bearer",
-                 portal_url: str = PORTAL_URL):
+                 portal_url: str = PORTAL_URL, otp_prompt=None):
         if download_auth not in DOWNLOAD_AUTH_STYLES:
             raise BhoonidhiError(f"unknown download auth style {download_auth!r}; use one of {DOWNLOAD_AUTH_STYLES}")
         self.download_auth = download_auth
         self.portal_url = portal_url.rstrip("/")
+        self.otp_prompt = otp_prompt  # callable returning the emailed 6-digit code; None in a non-interactive service
+        self._portal_jwt = None
         if not user or not password:
             raise BhoonidhiError("Bhoonidhi credentials are not set (BHOONIDHI_USER / BHOONIDHI_PASSWORD)")
         self._user, self._password = user, password
@@ -235,6 +239,60 @@ class BhoonidhiClient:
         except requests.RequestException as e:
             raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
 
+    def _portal_post(self, body: dict, encode: bool = False) -> dict:
+        """POST an action to the portal's LoginServlet; returns the first entry of the reply's Results list."""
+        if encode:  # the one-time-code step sends its values percent-encoded (as the unofficial client does)
+            body = {k: quote(str(v), safe="") for k, v in body.items()}
+        headers = {"Content-Type": "application/json", "Accept": "application/json",
+                   "X-Requested-With": "XMLHttpRequest", "Origin": self.portal_url,
+                   "Referer": f"{self.portal_url}/bhoonidhi/login.html"}
+        try:
+            r = self.session.request("POST", f"{self.portal_url}{PORTAL_LOGIN_PATH}", data=json.dumps(body),
+                                     headers=headers, timeout=30)
+        except requests.RequestException as e:
+            raise BhoonidhiError(f"could not reach the Bhoonidhi portal to log in: {type(e).__name__}") from None
+        if r.status_code != 200:
+            raise BhoonidhiError(f"Bhoonidhi portal login failed: HTTP {r.status_code} {self._describe(r)}")
+        try:
+            return r.json()["Results"][0]
+        except Exception:
+            raise BhoonidhiError("Bhoonidhi portal login: the reply was not the expected JSON") from None
+
+    def _keep_portal_jwt(self, jwt: str) -> str:
+        self._portal_jwt = jwt
+        self._secrets.add(jwt)
+        return jwt
+
+    def portal_login(self) -> str:
+        """Log in to the portal itself (not the official API) and keep its session token.
+
+        The portal may answer that a one-time code was emailed to the account; then `otp_prompt` is called for it. A
+        non-interactive service has no prompt and fails with a message saying so.
+        """
+        res = self._portal_post({"userId": self._user, "password": self._password,
+                                 "action": "VALIDATE_LOGIN", "oldDB": "false"})
+        jwt, message = res.get("JWT"), str(res.get("MSG") or "")
+        if jwt and jwt != "EXCEPTION":
+            return self._keep_portal_jwt(jwt)
+        if message.startswith("Login OTP has been mailed"):
+            if self.otp_prompt is None:
+                raise BhoonidhiError(
+                    "The Bhoonidhi portal login needs a one-time code, which it has just emailed to the account owner. "
+                    "A non-interactive service cannot answer it; run scripts/fetch_scene.py in a terminal instead.")
+            code = str(self.otp_prompt()).strip()
+            if not (code.isdigit() and len(code) == 6):
+                raise BhoonidhiError("the one-time code must be exactly 6 digits")
+            res = self._portal_post({"selProds": res.get("pending_token"), "otp": code, "action": "VERIFY_OTP"},
+                                    encode=True)
+            jwt = res.get("JWT")
+            if jwt and jwt != "EXCEPTION":
+                return self._keep_portal_jwt(jwt)
+            raise BhoonidhiError("the portal rejected the one-time code: " + self._scrub(str(res.get("MSG") or "no reason given")))
+        raise BhoonidhiError("Bhoonidhi portal login failed: " + self._scrub(message or "no session token was returned"))
+
+    def _portal_token(self) -> str:
+        return self._portal_jwt or self.portal_login()
+
     def portal_candidates(self, item: Item) -> list[str]:
         """Candidate portal download addresses (without the token) for a scene.
 
@@ -251,7 +309,7 @@ class BhoonidhiClient:
                 for m in months]
 
     def _portal_get(self, url: str, item: Item, **kwargs):
-        token = self._ensure_token()
+        token = self._portal_token()  # the portal rejects the official API's token ("permission denied")
         try:
             return self.session.request("GET", url, params={"token": token, "product_id": item.id}, **kwargs)
         except requests.RequestException as e:
@@ -272,7 +330,7 @@ class BhoonidhiClient:
     def probe_portal_download(self, item: Item) -> list[dict]:
         """Ask the portal's data path for the scene, once per candidate address, reading only the first bytes.
 
-        Uses the access token from the official API login. Stops at the first HTTP 200. Reports the address path (never
+        Uses the portal's own session token (see portal_login). Stops at the first HTTP 200. Reports the address path (never
         the token) and what came back.
         """
         results = []

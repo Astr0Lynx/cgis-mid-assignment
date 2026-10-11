@@ -1,4 +1,5 @@
 """The Bhoonidhi client against a fake of the documented API (no network, no credentials)."""
+import json
 from datetime import date
 
 import pytest
@@ -357,15 +358,15 @@ def test_portal_probe_tries_the_previous_month_and_reports_no_secret(tmp_path):
     results = client.probe_portal_download(item())
     assert [r["status"] for r in results] == [404, 200]  # stopped at the first 200
     assert results[1]["starts_with"] == "PK (a zip archive)" and results[1]["path"].endswith(f"2026/04/{SCENE}.zip")
-    assert "token-1" not in str(results)
+    assert "token-1" not in str(results) and "portaljwt" not in str(results)
 
 
-def test_portal_probe_shows_a_refusal_when_the_api_token_is_not_accepted(tmp_path):
+def test_portal_probe_shows_a_refusal_as_the_portal_words_it(tmp_path):
     api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
     api.portal_accepts = False
     client, _ = make_client(api)
     results = client.probe_portal_download(item())
-    assert all(r["status"] == 401 and "Invalid session" in r["starts_with"] for r in results)
+    assert all(r["status"] == 401 and "permission_denied" in r["starts_with"] for r in results)
 
 
 def test_download_through_the_portal_route_unpacks_the_scene(tmp_path):
@@ -376,13 +377,14 @@ def test_download_through_the_portal_route_unpacks_the_scene(tmp_path):
     assert api.count("/download") == 0  # never touched the official API's download
     sent = next(kw for _, path, kw in api.calls if path.startswith("/bhoonidhi/data/"))
     assert sent["params"]["product_id"] == SCENE and "Authorization" not in (sent.get("headers") or {})
+    assert sent["params"]["token"] == "portaljwt-1"  # the portal's own token, not the API's ("token-1")
 
 
 def test_portal_download_refusal_is_reported_clearly(tmp_path):
     api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
     api.portal_accepts = False
     client = BhoonidhiClient("student", "correct-horse", session=api, sleep=lambda s: None, download_auth="portal")
-    with pytest.raises(BhoonidhiError, match="401.*Invalid session"):
+    with pytest.raises(BhoonidhiError, match="401.*permission_denied|401.*Permission denied"):
         client.download_scene(item(), tmp_path / "data")
 
 
@@ -390,3 +392,62 @@ def test_portal_for_an_unknown_collection_says_so(tmp_path):
     client = BhoonidhiClient("u", "p", session=FakeBhoonidhi(), sleep=lambda s: None, download_auth="portal")
     with pytest.raises(BhoonidhiError, match="no portal download address"):
         client.download_scene(Item("x", "Sentinel-2_MSI", date(2026, 1, 1), None, True), tmp_path / "data")
+
+
+# ---- the portal's own login (separate from the API's), including the emailed one-time code -------------------------------
+
+def portal_client(api, otp=None):
+    return BhoonidhiClient("student", "correct-horse", session=api, sleep=lambda s: None, download_auth="portal",
+                           otp_prompt=otp)
+
+
+def test_portal_login_without_a_code_gets_a_token_and_hides_it():
+    api = FakeBhoonidhi()
+    client = portal_client(api)
+    assert client.portal_login() == "portaljwt-1"
+    body = next(json.loads(kw["data"]) for _, path, kw in api.calls if path == "/bhoonidhi/LoginServlet")
+    assert body == {"userId": "student", "password": "correct-horse", "action": "VALIDATE_LOGIN", "oldDB": "false"}
+    assert "portaljwt-1" in client._secrets  # will be scrubbed from any message
+
+
+def test_portal_login_with_an_emailed_code_asks_for_it_and_sends_it_encoded():
+    api = FakeBhoonidhi()
+    api.portal_otp = True
+    asked = []
+    client = portal_client(api, otp=lambda: asked.append(1) or " 123456 ")
+    assert client.portal_login() == "portaljwt-1" and asked == [1]
+    verify = [json.loads(kw["data"]) for _, p, kw in api.calls if p == "/bhoonidhi/LoginServlet"][1]
+    assert verify == {"selProds": "pend-1", "otp": "123456", "action": "VERIFY_OTP"}
+
+
+def test_portal_login_needing_a_code_fails_clearly_when_there_is_nobody_to_ask():
+    api = FakeBhoonidhi()
+    api.portal_otp = True
+    with pytest.raises(BhoonidhiError, match="needs a one-time code.*non-interactive"):
+        portal_client(api).portal_login()
+
+
+@pytest.mark.parametrize("answer,message", [("12345", "exactly 6 digits"), ("abcdef", "exactly 6 digits"),
+                                            ("999999", "rejected the one-time code")])
+def test_portal_login_rejects_bad_codes(answer, message):
+    api = FakeBhoonidhi()
+    api.portal_otp = True
+    with pytest.raises(BhoonidhiError, match=message):
+        portal_client(api, otp=lambda: answer).portal_login()
+
+
+def test_portal_login_with_a_wrong_password_never_echoes_it():
+    api = FakeBhoonidhi(password="something-else")
+    with pytest.raises(BhoonidhiError) as e:
+        portal_client(api).portal_login()
+    assert "login failed" in str(e.value) and "correct-horse" not in str(e.value)
+
+
+def test_the_portal_route_logs_in_once_and_reuses_the_session(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_otp = True
+    client = portal_client(api, otp=lambda: "123456")
+    client.download_scene(item(), tmp_path / "d1")
+    client.probe_portal_download(item())  # a second use of the portal in the same process
+    logins = sum(1 for _, p, _ in api.calls if p == "/bhoonidhi/LoginServlet")
+    assert logins == 2  # password step + code step, once

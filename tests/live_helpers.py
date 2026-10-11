@@ -97,7 +97,10 @@ class FakeBhoonidhi:
         self.calls = []  # (method, path, kwargs)
         self.download_statuses = {}  # item id -> list of statuses to return before success
         self.download_response = None  # optional callable(kwargs) -> FakeResponse, overrides /download entirely
-        self.portal_accepts = True  # does the portal data path accept the API access token as ?token= ?
+        self.portal_accepts = True  # does the portal data path accept a valid portal token?
+        self.portal_tokens = set()
+        self.portal_otp = False  # does the portal login demand an emailed one-time code?
+        self.portal_otp_code = "123456"
         self.portal_paths = None  # optional set of exact paths that exist on the portal (others give 404)
         self.download_accepts = {"bearer"}  # token styles /download accepts (the specification says bearer)
         self.valid_tokens = set()
@@ -108,11 +111,13 @@ class FakeBhoonidhi:
         self.calls.append((method, path, kw))
         if path == "/auth/token":
             return self._auth(kw["json"])
+        if path == "/bhoonidhi/LoginServlet":  # the portal's own login (separate from the official API's)
+            return self._portal_login(json.loads(kw["data"]))
         if path.startswith("/bhoonidhi/data/"):  # the portal's own data path (inferred from the unofficial client)
             q = kw.get("params") or {}
-            if not self.portal_accepts or q.get("token") not in self.valid_tokens:
-                return FakeResponse(401, {"ErrorCode": "401", "Description": "UNAUTHORIZED",
-                                          "Action": "Invalid session detected! Please login."})
+            if not self.portal_accepts or q.get("token") not in self.portal_tokens:  # the API's tokens are refused
+                return FakeResponse(401, "<!-- icons --> <html> <body class=\"permission_denied\"> Permission denied </body></html>",
+                                    headers={"Content-Type": "text/html;charset=UTF-8"})
             if (self.portal_paths is not None and path not in self.portal_paths) or q.get("product_id") not in self.archives:
                 return FakeResponse(404, "<html>Not Found</html>", reason="Not Found")
             data = self.archives[q["product_id"]]
@@ -144,6 +149,25 @@ class FakeBhoonidhi:
             return FakeResponse(200, chunks=[data[i:i + 4096] for i in range(0, len(data), 4096)],
                                 headers={"Content-Length": str(len(data))})
         return FakeResponse(404)
+
+    def _portal_login(self, body):
+        from urllib.parse import unquote
+
+        if body["action"] == "VALIDATE_LOGIN":
+            if body["password"] != self.password:
+                return FakeResponse(200, {"Results": [{"JWT": "EXCEPTION", "MSG": "Invalid user id or password"}]})
+            if self.portal_otp:
+                return FakeResponse(200, {"Results": [{"MSG": "Login OTP has been mailed to the registered address",
+                                                       "pending_token": "pend-1"}]})
+        elif body["action"] == "VERIFY_OTP":
+            if unquote(body["selProds"]) != "pend-1" or unquote(body["otp"]) != self.portal_otp_code:
+                return FakeResponse(200, {"Results": [{"MSG": "Invalid OTP. 2 attempts remaining"}]})
+        else:
+            return FakeResponse(400)
+        token = f"portaljwt-{len(self.portal_tokens) + 1}"
+        self.portal_tokens.add(token)
+        return FakeResponse(200, {"Results": [{"JWT": token, "USERID": body.get("userId", "student"),
+                                               "USEREMAIL": "student@example.org"}]})
 
     def _auth(self, body):
         if body.get("grant_type") == "password":
