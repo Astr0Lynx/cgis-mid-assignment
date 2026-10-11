@@ -1,5 +1,6 @@
 """Read a Bhoonidhi LISS-III scene folder and clip it to a lat/lon bbox."""
 import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +36,13 @@ class Scene:
         self.date = datetime.strptime(self.meta["DateOfPass"], "%d-%b-%Y")
         # The tifs' GeoTIFF keys carry a WGS84 ellipsoid off by ~1e-6 in flattening, which
         # matches no EPSG code; use the standard WGS84/UTM north code from ZoneNo instead.
-        self.crs = rasterio.crs.CRS.from_epsg(32600 + int(float(self.meta["ZoneNo"])))
+        try:
+            self.crs = rasterio.crs.CRS.from_epsg(32600 + int(float(self.meta["ZoneNo"])))
+        except rasterio.errors.CRSError as e:
+            raise RuntimeError(
+                "Could not build the scene's coordinate system, which is almost always a PROJ data problem "
+                f"(python={sys.executable}; rasterio={rasterio.__file__}; PROJ_LIB={os.environ.get('PROJ_LIB')}; "
+                f"PROJ_DATA={os.environ.get('PROJ_DATA')}). Original error: {str(e)[:200]}") from e
         with rasterio.open(self.band_path("red")) as ds:
             self.bounds = ds.bounds
 
