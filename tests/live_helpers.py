@@ -102,6 +102,7 @@ class FakeBhoonidhi:
         self.portal_sat, self.portal_sensor = "RS2", "LIS3"  # the portal's own codes for the scenes it lists
         self.portal_selections = {"ResourceSat-2_LISS3_L2", "ResourceSat-2_LISS3_L2-Archives"}  # names it recognises
         self.portal_search_bodies = []
+        self.meta_corners = {}  # scene id -> {"UL": (lon, lat), ...}: what the portal's metadata file reports (absent = 404)
         self.portal_otp = False  # does the portal login demand an emailed one-time code?
         self.portal_otp_code = "123456"
         self.portal_paths = None  # optional set of exact paths that exist on the portal (others give 404)
@@ -114,6 +115,13 @@ class FakeBhoonidhi:
         self.calls.append((method, path, kw))
         if path == "/auth/token":
             return self._auth(kw["json"])
+        if path.startswith("/imgarchive/") and path.endswith(".meta"):  # the portal's public metadata file
+            scene_id = path.rsplit("/", 1)[-1][:-5]
+            corners = self.meta_corners.get(scene_id)
+            if corners is None or scene_id not in self.archives:
+                return FakeResponse(404, "<html>Not Found</html>")
+            text = "".join(f"Image{c}Lon= {lon}\nImage{c}Lat= {lat}\n" for c, (lon, lat) in corners.items())
+            return FakeResponse(200, text)
         if path == "/bhoonidhi/ProductSearch":  # the portal's own search (request format from the unofficial client)
             return self._portal_search(kw["json"])
         if path == "/bhoonidhi/LoginServlet":  # the portal's own login (separate from the official API's)

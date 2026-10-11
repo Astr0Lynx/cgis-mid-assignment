@@ -98,6 +98,15 @@ def _point_in_ring(x: float, y: float, ring: list[tuple[float, float]]) -> bool:
     return inside
 
 
+def image_corners_geometry(meta: dict) -> dict | None:
+    """A GeoJSON polygon from the four ImageUL/UR/LR/LL corners of a scene's metadata, or None."""
+    try:
+        ring = [(float(meta[f"Image{c}Lon"]), float(meta[f"Image{c}Lat"])) for c in ("UL", "UR", "LR", "LL")]
+    except (KeyError, ValueError):
+        return None
+    return {"type": "Polygon", "coordinates": [[*ring, ring[0]]]}
+
+
 def footprint_contains_bbox(geometry: dict | None, bbox) -> bool:
     """True if all four corners of the (minx, miny, maxx, maxy) bbox lie inside the scene footprint polygon."""
     if not geometry:
@@ -373,6 +382,34 @@ class BhoonidhiClient:
                 if record.get("ID") == item.id or record.get("FILENAME") == item.id:
                     return record
         return None
+
+    def portal_meta_url(self, record: dict) -> str | None:
+        """Address of the scene's small metadata file (the same text as BAND_META.txt, with the true image corners).
+
+        Open-data scenes only. Built as the unofficial client does it: <portal>/<DIRPATH>/<FILENAME>.meta.
+        """
+        if not (str(record.get("PRICED") or "").startswith("OpenData_") and record.get("TABLETYPE") == "PMETA"):
+            return None
+        directory, name = str(record.get("DIRPATH") or "").strip("/"), str(record.get("FILENAME") or record.get("ID") or "")
+        return f"{self.portal_url}/{directory}/{name}.meta" if directory and name else None
+
+    def fetch_portal_meta(self, record: dict) -> dict | None:
+        """The scene's metadata fields from the portal, or None if unavailable (callers then fall back to downloading)."""
+        url = self.portal_meta_url(record)
+        if not url:
+            return None
+        try:
+            r = self.session.request("GET", url, timeout=(10, 30))
+            if r.status_code != 200:
+                return None
+            meta = {}
+            for line in r.text.splitlines():
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    meta[key.strip()] = value.strip()
+        except Exception:
+            return None
+        return meta if "ImageULLat" in meta else None
 
     def portal_candidates_from(self, record: dict) -> list[str]:
         """The download address the unofficial client builds from a portal record (no guessing)."""

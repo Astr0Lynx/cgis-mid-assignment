@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import app  # noqa: E402,F401  (pins PROJ/GDAL data before rasterio is used)
 from app import live_fetch  # noqa: E402
 from app.bhoonidhi_client import (DOWNLOAD_AUTH_STYLES, PORTAL_RECORD_FIELDS, BhoonidhiClient, BhoonidhiError,  # noqa: E402
-                                 footprint_contains_bbox, load_env_file)
+                                 footprint_contains_bbox, image_corners_geometry, load_env_file)
 
 
 def ask_otp() -> str:
@@ -102,6 +102,15 @@ def main() -> int:
                     f"{k}={record.get(k)}" for k in PORTAL_RECORD_FIELDS if k in record))
             else:
                 print("  the portal search did not return this scene; falling back to the inferred layout")
+            if record:
+                meta = client.fetch_portal_meta(record)
+                geometry = image_corners_geometry(meta) if meta else None
+                if geometry is None:
+                    print("  portal metadata file: not available (the footprint cannot be checked before downloading)")
+                else:
+                    covers = footprint_contains_bbox(geometry, bbox)
+                    print(f"  portal metadata file read: the scene's TRUE image footprint "
+                          f"{'covers' if covers else 'does NOT cover'} the bbox")
             print(f"Asking the portal's data path for {options[0].id} (nothing is downloaded):")
             results = client.probe_portal_download(options[0], record)
             for r in results:
