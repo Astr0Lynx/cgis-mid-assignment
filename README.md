@@ -283,9 +283,9 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   account owner, through the command-line script: API login and STAC search; the portal login with its emailed one-time
   code; the portal's own search; a 141 MB download and unpack; and the coverage check (it accepted the 2 Oct
   Resourcesat-2A scene at 100% and refused the 9 Oct scene). The browser login-and-fetch flow was tested end to end in
-  real Chrome against a **fake** Bhoonidhi (`scripts/dev_fake_bhoonidhi.py`, 19 checks) and with the real Bhoonidhi
-  only up to what the script covers; whether the page flow works with a real account's emailed code, and whether the
-  `.meta` pre-check URL exists for real scenes, is **not yet confirmed**. The portal route uses endpoints NRSC does not
+  real Chrome against a **fake** Bhoonidhi (`scripts/dev_fake_bhoonidhi.py`, 19 checks), and the account owner then used it
+  with the real Bhoonidhi (2026-10-11): logging in on the page with the emailed code and fetching a scene for an area
+  outside the prepared data worked. Whether the `.meta` pre-check URL exists for real scenes is **not yet confirmed**. The portal route uses endpoints NRSC does not
   document, learnt from a third-party client, so it may change. The documented official `/download` was refused
   ("Invalid session detected") for every way of sending the token; the cause is unknown (possibly an account
   permission). The public instance never has credentials and does not log anyone in.
