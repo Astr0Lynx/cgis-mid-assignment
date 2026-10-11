@@ -235,7 +235,7 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 ### Fetching more scenes from Bhoonidhi (needs your own Bhoonidhi account)
 **From the map page** (no `.env` file needed; you type your credentials into the page):
 ```bash
-BROWSER_LOGIN=1 .venv/Scripts/python -m app.server      # then open http://localhost:5000/ (Linux/macOS: .venv/bin/python)
+BROWSER_LOGIN=1 PORT=5001 .venv/Scripts/python -m app.server   # then open http://127.0.0.1:5001/ (Linux/macOS: .venv/bin/python)
 # PowerShell:  $env:BROWSER_LOGIN="1"; .\.venv\Scripts\python -m app.server
 ```
 Or without a Bhoonidhi account, to try the whole flow against a made-up archive: `python scripts/dev_fake_bhoonidhi.py`
