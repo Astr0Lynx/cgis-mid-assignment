@@ -83,3 +83,19 @@ def test_spectral_index_describe_process_valid(schema, client):
 @needs_data
 def test_spectral_index_execute_valid(schema, client):
     assert_valid(schema, client.get(KVP + f"Execute&identifier=spectral-index&DataInputs={BBOX};index=ndwi").data)
+
+
+def test_vendored_schemas_need_no_network():
+    """Regression: absolute http schemaLocations made schema loading depend on the network and the libxml2 build."""
+    import re
+
+    root = SCHEMA.parents[2]  # tests/schemas
+    absolute, missing = [], []
+    for xsd in root.rglob("*.xsd"):
+        for loc in re.findall(r'schemaLocation="([^"]+)"', xsd.read_text(encoding="utf-8")):
+            if loc.startswith(("http://", "https://")):
+                absolute.append((xsd.name, loc))
+            elif not (xsd.parent / loc).resolve().is_file():
+                missing.append((xsd.name, loc))
+    assert not absolute, f"schemas must import local copies, not URLs: {absolute[:3]}"
+    assert not missing, f"imported schema files are missing: {missing[:3]}"

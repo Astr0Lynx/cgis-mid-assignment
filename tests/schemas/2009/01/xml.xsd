@@ -207,14 +207,14 @@
           &lt;schema . . .>
            . . .
            &lt;import namespace="http://www.w3.org/XML/1998/namespace"
-                      schemaLocation="http://www.w3.org/2001/xml.xsd"/>
+                      schemaLocation="../../2001/xml.xsd"/>
      </pre>
      <p>
       or
      </p>
      <pre>
            &lt;import namespace="http://www.w3.org/XML/1998/namespace"
-                      schemaLocation="http://www.w3.org/2009/01/xml.xsd"/>
+                      schemaLocation="xml.xsd"/>
      </pre>
      <p>
       Subsequently, qualified reference to any of the attributes or the

@@ -12,7 +12,7 @@
 		</documentation>
 	</annotation>
 	<!-- ==============================================================-->
-	<import namespace="http://www.w3.org/1999/xlink" schemaLocation="http://www.w3.org/1999/xlink.xsd"/>
+	<import namespace="http://www.w3.org/1999/xlink" schemaLocation="../../../1999/xlink.xsd"/>
 	<!-- ==============================================================-->
 	<element name="WSDL">
 		<annotation>
