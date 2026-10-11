@@ -167,8 +167,11 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
   asynchronous Execute with status polling through OWSLib.
 - The suite found several places where PyWPS 4.8 violates the schemas or the OGC axis-order convention; these are
   fixed in `app/pywps_compat.py` (see section 3). The response options above (`lineage`, `RawDataOutput`,
-  `ResponseDocument`) are tested too, over both KVP and XML POST. Not covered: WPS 2.0, `Reference` inputs, and
-  every possible request variant.
+  `ResponseDocument`) are tested too, over both KVP and XML POST.
+- **Version handling.** Only WPS 1.0.0 is advertised, and a request for another version gets an OGC `ExceptionReport`
+  (`VersionNegotiationFailed` for `GetCapabilities`, `InvalidParameterValue` on `version` otherwise). PyWPS by itself also
+  advertised 2.0.0 while answering with 1.0.0 documents.
+- Not covered: WPS 2.0, `Reference` inputs, the official OGC CITE test suite, and every possible request variant.
 
 ## 3. Design and implementation choices
 - **PyWPS 4.8 on Flask + gunicorn, in Docker.** PyWPS asynchronous execution uses `multiprocessing` and does not work
