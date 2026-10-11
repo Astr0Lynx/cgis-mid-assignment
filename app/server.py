@@ -13,6 +13,7 @@ from pywps.exceptions import InvalidParameterValue
 
 import app.pywps_compat  # noqa: F401  (bbox axis order, see module docstring)
 from app.cleanup import start_background_purge
+from app.webauth import bp as webauth_bp
 from app.processes.ndvi import Ndvi, SpectralIndex
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +48,7 @@ JOBS_DB.unlink(missing_ok=True)
 configuration.CONFIG.set("logging", "database", f"sqlite:///{JOBS_DB.as_posix()}")
 
 flask_app = Flask(__name__)
+flask_app.register_blueprint(webauth_bp)  # browser login to Bhoonidhi (off unless BROWSER_LOGIN=1)
 
 
 def _requested_outputs():

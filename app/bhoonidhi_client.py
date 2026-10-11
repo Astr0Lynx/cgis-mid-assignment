@@ -117,6 +117,7 @@ class BhoonidhiClient:
         self.portal_url = portal_url.rstrip("/")
         self.otp_prompt = otp_prompt  # callable returning the emailed 6-digit code; None in a non-interactive service
         self._portal_jwt = None
+        self._pending_otp = None
         self._tried_portal_paths = []
         if not user or not password:
             raise BhoonidhiError("Bhoonidhi credentials are not set (BHOONIDHI_USER / BHOONIDHI_PASSWORD)")
@@ -155,6 +156,8 @@ class BhoonidhiClient:
                 return self._access
             except BhoonidhiError:
                 self._refresh = None  # fall back to a password login
+        if self._password is None:
+            raise BhoonidhiError("the Bhoonidhi session expired and the credentials were discarded; log in again")
         self._token_request({"userId": self._user, "password": self._password, "grant_type": "password"})
         return self._access
 
@@ -271,32 +274,61 @@ class BhoonidhiClient:
         self._secrets.add(jwt)
         return jwt
 
-    def portal_login(self) -> str:
-        """Log in to the portal itself (not the official API) and keep its session token.
+    def portal_login_begin(self) -> bool:
+        """First step of the portal login: send the credentials.
 
-        The portal may answer that a one-time code was emailed to the account; then `otp_prompt` is called for it. A
-        non-interactive service has no prompt and fails with a message saying so.
+        Returns True if the portal accepted them outright (a session token is now held), or False if it emailed a
+        one-time code to the account owner (then call portal_login_finish with the code). Raises on any refusal.
         """
+        if self._password is None:
+            raise BhoonidhiError("the credentials were already discarded; log in again")
         res = self._portal_post({"userId": self._user, "password": self._password,
                                  "action": "VALIDATE_LOGIN", "oldDB": "false"})
         jwt, message = res.get("JWT"), str(res.get("MSG") or "")
         if jwt and jwt != "EXCEPTION":
-            return self._keep_portal_jwt(jwt)
+            self._keep_portal_jwt(jwt)
+            return True
         if message.startswith("Login OTP has been mailed"):
+            self._pending_otp = res.get("pending_token")
+            return False
+        raise BhoonidhiError("Bhoonidhi portal login failed: " + self._scrub(message or "no session token was returned"))
+
+    def portal_login_finish(self, code: str) -> None:
+        """Second step: send the emailed 6-digit code. Raises if it is malformed or the portal rejects it."""
+        code = str(code).strip()
+        if not (code.isdigit() and len(code) == 6):
+            raise BhoonidhiError("the one-time code must be exactly 6 digits")
+        if not self._pending_otp:
+            raise BhoonidhiError("no one-time code is pending; start the login again")
+        res = self._portal_post({"selProds": self._pending_otp, "otp": code, "action": "VERIFY_OTP"}, encode=True)
+        jwt = res.get("JWT")
+        if jwt and jwt != "EXCEPTION":
+            self._pending_otp = None
+            self._keep_portal_jwt(jwt)
+            return
+        raise BhoonidhiError("the portal rejected the one-time code: " + self._scrub(str(res.get("MSG") or "no reason given")))
+
+    def portal_login(self) -> str:
+        """Log in to the portal itself (not the official API) and keep its session token.
+
+        The portal may answer that a one-time code was emailed to the account; then `otp_prompt` is called for it. A
+        non-interactive caller has no prompt and fails with a message saying so.
+        """
+        if not self.portal_login_begin():
             if self.otp_prompt is None:
                 raise BhoonidhiError(
                     "The Bhoonidhi portal login needs a one-time code, which it has just emailed to the account owner. "
                     "A non-interactive service cannot answer it; run scripts/fetch_scene.py in a terminal instead.")
-            code = str(self.otp_prompt()).strip()
-            if not (code.isdigit() and len(code) == 6):
-                raise BhoonidhiError("the one-time code must be exactly 6 digits")
-            res = self._portal_post({"selProds": res.get("pending_token"), "otp": code, "action": "VERIFY_OTP"},
-                                    encode=True)
-            jwt = res.get("JWT")
-            if jwt and jwt != "EXCEPTION":
-                return self._keep_portal_jwt(jwt)
-            raise BhoonidhiError("the portal rejected the one-time code: " + self._scrub(str(res.get("MSG") or "no reason given")))
-        raise BhoonidhiError("Bhoonidhi portal login failed: " + self._scrub(message or "no session token was returned"))
+            self.portal_login_finish(self.otp_prompt())
+        return self._portal_jwt
+
+    def forget_password(self) -> None:
+        """Drop the password from memory once logged in (web sessions: it must not outlive the login request).
+
+        Tokens keep working; if they expire and cannot be refreshed, the caller must log in again.
+        """
+        self._secrets.discard(self._password)
+        self._password = None
 
     def _portal_token(self) -> str:
         return self._portal_jwt or self.portal_login()
