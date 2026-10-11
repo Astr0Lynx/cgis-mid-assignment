@@ -60,9 +60,7 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 - VERIFIED with the real Bhoonidhi (2026-10-11, `fetch_scene.py --probe-portal-download`): the `.meta` file is public for
   open-data scenes and gives the true image corners; for the 9 Oct scene it correctly reported NOT covering the Hyderabad bbox,
   so the pre-download check skips it. The portal data path answered 200 with a 141 MB zip.
-- TODO when a VM exists: serve over HTTPS (the password is posted to the server) and only then set `BROWSER_LOGIN=1`.
+- DONE (2026-10-11): Azure VM (Malaysia West) with HTTPS via Caddy + Let's Encrypt; browser login enabled there. See docs/AZURE.md.
 - NOT DONE: reusing the portal session so the service itself could fetch scenes during a request (the emailed code is
   needed at every login; the unofficial client's VALIDATE_SESSION call suggests a session can be refreshed, untested).
-- NOT DONE: TOA reflectance (blocked on a cited ESUN table), SAVI (needs reflectance), always-on hosting (an Azure VM was
-  considered: student credits, run the same Docker image, copy the cache over, open only SSH and the service port, never
-  put credentials there), an OGC API - Processes front end (pygeoapi) as a follow-up.
+- NOT DONE: TOA reflectance (blocked on a cited ESUN table), SAVI (needs reflectance), an OGC API - Processes front end (pygeoapi) as a follow-up.
