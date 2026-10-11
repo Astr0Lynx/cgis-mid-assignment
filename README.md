@@ -296,7 +296,9 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   Resourcesat-2A scene at 100% and refused the 9 Oct scene). The browser login-and-fetch flow was tested end to end in
   real Chrome against a **fake** Bhoonidhi (`scripts/dev_fake_bhoonidhi.py`, 19 checks), and the account owner then used it
   with the real Bhoonidhi (2026-10-11): logging in on the page with the emailed code and fetching a scene for an area
-  outside the prepared data worked. Whether the `.meta` pre-check URL exists for real scenes is **not yet confirmed**. The portal route uses endpoints NRSC does not
+  outside the prepared data worked. The footprint pre-check was also confirmed on the real portal (2026-10-11): the scene's public `.meta` file was read, and
+  it showed that the 9 Oct 2026 scene, which the search lists as covering central Hyderabad, does not truly cover it, so
+  it would be skipped before the 141 MB download. The portal route uses endpoints NRSC does not
   document, learnt from a third-party client, so it may change. The documented official `/download` was refused
   ("Invalid session detected") for every way of sending the token; the cause is unknown (possibly an account
   permission). The public instance never has credentials and does not log anyone in.
