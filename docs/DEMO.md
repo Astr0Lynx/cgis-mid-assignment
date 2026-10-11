@@ -84,6 +84,17 @@ Every reply type (capabilities, describe, execute, errors, async status) is vali
 schemas. Say what it found: PyWPS 4.8 produced schema-invalid XML in several places and we corrected them
 (README section 3).
 
+## 9. Optional: the client really talks to Bhoonidhi (local terminal only)
+```
+python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run
+```
+This logs in to Bhoonidhi's real API with your own account (read from your git-ignored `.env`; nothing secret is
+printed) and runs a STAC search, listing the online LISS-III scenes that cover the area, with their dates and footprints.
+Say what it proves and what it does not: login and search are verified against the real API; the **download** is not
+(the server answers `401 Invalid session detected` to `/download`), which is why the public service serves scenes that
+were downloaded by hand and prepared in advance. Do not run it more than once or twice (login is limited to 20 per
+hour), do not run it without `--dry-run`, and skip this step entirely if you are short of time.
+
 ## Honest limitations to state yourself
 - Indices use at-sensor radiance, not reflectance, so absolute values are biased and only contrast is meaningful.
   Reflectance (`radiometry=toa`) is built but disabled until a cited solar-irradiance table is available.
