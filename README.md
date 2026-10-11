@@ -236,7 +236,8 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 **From the map page** (no `.env` file needed; you type your credentials into the page):
 ```bash
 BROWSER_LOGIN=1 PORT=5001 .venv/Scripts/python -m app.server   # then open http://127.0.0.1:5001/ (Linux/macOS: .venv/bin/python)
-# PowerShell:  $env:BROWSER_LOGIN="1"; .\.venv\Scripts\python -m app.server
+# PowerShell:  $env:BROWSER_LOGIN="1"; $env:PORT="5001"; .\.venv\Scripts\python -m app.server
+# (use 127.0.0.1, not localhost: a Docker container on port 5000 may answer on localhost instead)
 ```
 Or without a Bhoonidhi account, to try the whole flow against a made-up archive: `python scripts/dev_fake_bhoonidhi.py`
 (password `correct-horse`, code `123456`, draw a box around 80.6 E 16.5 N). The browser flow is also tested end to end in a
