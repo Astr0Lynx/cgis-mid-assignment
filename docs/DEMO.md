@@ -4,18 +4,24 @@ About 10 minutes. Everything is a real request to the public service; nothing is
 (it is what people remember); the terminal steps afterwards prove it is a standards-compliant OGC WPS underneath.
 
 ## Before you start (10 minutes earlier)
-1. Restart the laptop if it has been up for days, then start Docker Desktop and wait for it to say it is running.
-   The container is created with `--restart unless-stopped`, so `docker ps` should show `bwps` as **Up**; if not:
-   `docker start bwps`.
-2. `ngrok http 5000` in its own terminal. Copy the `https://….ngrok-free.dev` address.
-3. If it differs from the address the container was started with, restart the container with it:
-   `docker rm -f bwps` then `docker run -d --name bwps --restart unless-stopped -p 5000:5000 -e PUBLIC_BASE_URL=https://YOUR-ADDRESS bhoonidhi-wps`.
-4. In a terminal set the address once so the commands below can be pasted: bash `W="https://YOUR-ADDRESS/wps"`,
-   PowerShell `$W = "https://YOUR-ADDRESS/wps"`.
-5. Open `https://YOUR-ADDRESS/` in the browser (this is the map page). If ngrok shows a "Visit Site" page, click through
-   once beforehand. Keep a second tab on `http://localhost:5000/` as a fallback. QGIS open with an OpenStreetMap basemap
-   on Hyderabad (optional step 5).
-6. Do the whole script **once** beforehand, not repeatedly: the free ngrok plan limits connections.
+The service runs on an Azure VM with HTTPS: **https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/** . Nothing needs starting on your laptop.
+1. **Use a network that can reach it.** The IIIT-H campus Wi-Fi blocks this address range (SSH, 80 and 443 time out; checked
+   from campus 2026-10-11), while a phone hotspot works. If you present on campus Wi-Fi, switch to a hotspot, or use the
+   ngrok fallback below. Tell the audience if it matters.
+2. In the Azure portal check the VM `cgis-mid` shows **Running** (it keeps running and billing until stopped; start it in the
+   portal if it was stopped, and give it two minutes). Open the address above in the browser: the map page should load with a
+   padlock and a "Bhoonidhi account: not logged in" line.
+3. In a terminal set the address once so the commands below can be pasted: bash `W="https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/wps"`,
+   PowerShell `$W = "https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/wps"`.
+4. For the live-fetch part (section 4) have your Bhoonidhi password ready and your mailbox open for the emailed code. Do the
+   fetch **once** beforehand: the fetched scene is shared and expires after 6 hours, so repeating it right before the demo
+   would hide the fetch (use an area you have not fetched yet).
+5. Do the whole script **once** beforehand. QGIS open with an OpenStreetMap basemap on Hyderabad is optional (step 5).
+
+**Fallback (only if the VM is unreachable):** the laptop copy. Start Docker Desktop, check `docker ps` shows `bwps` Up
+(else `docker start bwps`), run `ngrok http 5000`, and if its address differs from the one the container was started with:
+`docker rm -f bwps` then `docker run -d --name bwps --restart unless-stopped -p 5000:5000 -e PUBLIC_BASE_URL=https://YOUR-NGROK-ADDRESS bhoonidhi-wps`.
+That copy serves only the prepared scenes (login is off on a tunnel) and the free ngrok plan limits connections.
 
 The demo area, central Hyderabad: `miny,minx,maxy,maxx = 17.35,78.40,17.45,78.55` (OGC order for EPSG:4326 is latitude first).
 
@@ -84,12 +90,12 @@ downloads the scene. The documented API download refused our token, so it uses t
 emails a one-time code at login). It also checks the pixels: Bhoonidhi listed one scene as covering Hyderabad, but its
 image is tilted and had no data there, and it was refused."
 
-**Live fetch from the page (local instance only, the one with login switched on).** Start it beforehand in its own
-terminal: `BROWSER_LOGIN=1 .venv/Scripts/python -m app.server` (PowerShell: `$env:BROWSER_LOGIN="1"; .\.venv\Scripts\python -m app.server`) and open
-`http://localhost:5000/`. Draw a box outside the outlined scenes (for example over Vijayawada or Warangal, inside a
+**Live fetch from the page (on the Azure instance, where login is switched on).** Open `https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/`.
+(A local copy also works: `BROWSER_LOGIN=1 PORT=5001 .venv/Scripts/python -m app.server`, then `http://127.0.0.1:5001/`.)
+Draw a box outside the outlined scenes (for example over Vijayawada or Warangal, inside a
 real Bhoonidhi scene), leave the date on "Newest scene on Bhoonidhi", press **Run**. The dialog asks for your Bhoonidhi
 user id and password, then for the code Bhoonidhi emails you; type it in the page and the run continues by itself with a
-progress bar (about 140 MB). Say: "Nothing was typed anywhere but the page and my mailbox." Do this **once**, rehearsed,
+progress bar (about 140 MB). Say: "I only typed into this page and my mailbox; the server uses the password once to log in to Bhoonidhi and does not store it." Do this **once**, rehearsed,
 with a spare minute for the download; if the network is slow, show the same flow with the made-up archive instead:
 `python scripts/dev_fake_bhoonidhi.py` (password `correct-horse`, code `123456`, box around 80.6 E 16.5 N), and say that
 it is a stand-in. Logging in by choice (the account button) does not start anything.
@@ -109,8 +115,9 @@ EPSG:32643/32644; style it as singleband pseudocolor. Zoom to Hussain Sagar (17.
 ## Honest limitations to state yourself
 - Indices use at-sensor radiance, not reflectance: absolute values are biased and only contrast is meaningful.
   Reflectance (`radiometry=toa`) is built but disabled until a cited solar-irradiance table is available.
-- The public instance serves four prepared scenes around Hyderabad (18 and 23 May, 2 and 9 Oct 2026); it has no Bhoonidhi
-  credentials and never logs anyone in. Fetching needs a person with a Bhoonidhi account (the emailed code), through the
+- The instance serves four prepared scenes around Hyderabad (18 and 23 May, 2 and 9 Oct 2026) and has no Bhoonidhi
+  credentials of its own; anyone can log in with their own account on the page to fetch more (the server sees that password
+  while logging in, which is why the page says to use it only on an instance you trust). Fetching needs a person with a Bhoonidhi account (the emailed code), through the
   page on a local instance or the script. The browser flow has been tested against a fake Bhoonidhi; say whether you have
   tried it with your real account before the demo.
 - It is an unofficial service built on data from Bhoonidhi, not part of Bhoonidhi.
@@ -119,9 +126,10 @@ EPSG:32643/32644; style it as singleband pseudocolor. Zoom to Hussain Sagar (17.
 ## If something goes wrong
 | Symptom | Do this |
 |---|---|
+| The address times out or the page never loads | you are on a network that blocks it (campus Wi-Fi): use a phone hotspot; otherwise check in the portal that the VM is Running |
 | The page shows a grey map with no streets | the browser cannot reach OpenStreetMap tiles (no internet); the WPS still works, use the terminal steps |
-| The page says it cannot reach the service | the container is down: `docker start bwps` (or the `docker run` line in step 3 of the setup) |
-| `curl` hangs or the browser shows an ngrok error page | ngrok is down or rate limited: wait a minute; restart ngrok; restart the container with the new address |
-| Links in responses say `localhost` or an old address | container started without the current `PUBLIC_BASE_URL`; restart it with the ngrok address |
-| Async stays on `ProcessAccepted` | `docker logs bwps`; restart the container |
-| Everything fails | run the same steps against `http://localhost:5000` (page) and `http://localhost:5000/wps`; behaviour is identical |
+| The page says it cannot reach the service | on the VM: `cd cgis-mid-assignment && sudo docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d` (SSH in with the key; see docs/AZURE.md) |
+| Browser certificate warning | the VM's address changed or Caddy could not renew; check `sudo docker compose -f deploy/docker-compose.yml logs caddy` |
+| Login says it is disabled | you are on the ngrok or laptop copy, where login is off by design |
+| Async stays on `ProcessAccepted` | `sudo docker compose -f deploy/docker-compose.yml logs app` on the VM, then restart with `restart app` |
+| Everything fails | use the ngrok fallback above, or a local copy: `http://localhost:5000` (identical behaviour) |

@@ -13,7 +13,8 @@ It comes with an interactive map page that is simply a client of the WPS.
 It runs on an Azure VM (Docker, Caddy with a Let's Encrypt certificate), always on while the VM is running; deployment steps
 are in [docs/AZURE.md](docs/AZURE.md). The prepared scenes around Hyderabad (section 5) are served directly; for any other
 area the map page offers to fetch a scene after you log in, on the page, to your **own** Bhoonidhi account (section 3 explains
-what that means for your password). A second copy runs from the author's laptop through an ngrok tunnel
+what that means for your password). Some campus networks (IIIT-H Wi-Fi, checked 2026-10-11) block this VM's address range,
+so if it does not load, try another network such as a phone hotspot. A second copy runs from the author's laptop through an ngrok tunnel
 (`https://triangle-overpass-flirt.ngrok-free.dev/`, only while the laptop is on, login switched off there); see
 [docs/DEMO.md](docs/DEMO.md). Everything below can also be run locally (section 4).
 
