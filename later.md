@@ -43,3 +43,15 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 ## COGs
 - Do NOT convert the source scenes (uncompressed, row-striped, clip reads are already cheap).
 - DO use COG for (a) the pre-clipped band cache shipped with the public deployment and (b) WPS GeoTIFF outputs (`rasterio.shutil.copy(..., driver="COG")`).
+
+## Status at submission (2026-10-12)
+- DONE and verified on the real Bhoonidhi (by the account owner): API login + STAC search; portal login with the emailed
+  one-time code; portal search; 141 MB download + unpack; real-pixel coverage check (accepted 2 Oct 2026 Resourcesat-2A,
+  refused 9 Oct 2026). The official API `/download` was refused for every token form ("Invalid session detected").
+- DONE: interactive map page (draw an area, pick date + index, overlay, legend, WPS request panel, light/dark), colour
+  `preview` output, `/api/info`, `/api/coverage`.
+- NOT DONE: reusing the portal session so the service itself could fetch scenes during a request (the emailed code is
+  needed at every login; the unofficial client's VALIDATE_SESSION call suggests a session can be refreshed, untested).
+- NOT DONE: TOA reflectance (blocked on a cited ESUN table), SAVI (needs reflectance), always-on hosting (an Azure VM was
+  considered: student credits, run the same Docker image, copy the cache over, open only SSH and the service port, never
+  put credentials there), an OGC API - Processes front end (pygeoapi) as a follow-up.

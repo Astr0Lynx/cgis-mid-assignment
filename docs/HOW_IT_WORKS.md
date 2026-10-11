@@ -7,7 +7,7 @@ A guide to what is running, why, and how to operate it. No prior Docker, WPS or 
 
 ```
  Someone (a script, a WPS client, a browser)
-        |   HTTPS request:  "give me NDVI for this box"
+        |   HTTPS request:  "give me NDVI for this box"   (the map page sends exactly such requests)
         v
  +---------------+      +--------------------------------------------------+
  |    ngrok      |      |  Docker container "bwps" (a mini Linux computer)   |
@@ -15,10 +15,10 @@ A guide to what is running, why, and how to operate it. No prior Docker, WPS or 
  | your laptop   |      |   gunicorn (web server)                            |
  +---------------+      |      -> Flask app (app/server.py)                  |
    (only for the demo)  |           -> PyWPS (the WPS standard engine)       |
-                        |                -> our process "ndvi"               |
+                        |                -> our process "spectral-index"     |
                         |                     -> reads satellite bands       |
-                        |                     -> computes NDVI               |
-                        |                     -> returns a GeoTIFF + stats   |
+                        |                     -> computes the index          |
+                        |                     -> GeoTIFF + colour PNG + stats|
                         +--------------------------------------------------+
 ```
 
@@ -56,16 +56,20 @@ app/
                     decides which scenes truly cover the box; writes the result as a COG.
   processes/ndvi.py The WPS processes `ndvi` and `spectral-index` (one shared class): inputs/outputs, checks, handler.
   pywps_compat.py   Fixes for places where PyWPS 4.8 breaks the OGC standard (see section 8).
-  server.py         The web app: /wps (the service), /outputs/ (result files), / (landing page).
+  server.py         The web app: /wps (the service), /outputs/ (result files), / (the map page), /api/info, /api/coverage.
+  preview.py        Colour PNG preview of a result (reprojected to lat/lon, percentile stretch), built with numpy + zlib.
+  static/           The interactive map page: index.html, app.js, style.css and a vendored copy of Leaflet.
   cleanup.py        Deletes stored results older than OUTPUT_TTL_HOURS so the disk cannot fill up.
-  bhoonidhi_client.py  Talks to the Bhoonidhi API: log in, search, download a scene (written from NRSC's spec, tested on a fake).
-  live_fetch.py     Live mode: if no local scene covers a request, fetch one through the client. Off by default.
+  bhoonidhi_client.py  Talks to Bhoonidhi: API login + STAC search, the portal's own login (emailed one-time code),
+                    the portal's search and download route, safe unpacking. Verified on the real service (README section 5).
+  live_fetch.py     Request-time fetching glue (off by default; cannot answer the emailed code unattended).
 scripts/
   build_cache.py    data/ -> cache/ (cuts the scenes down to Hyderabad).
+  fetch_scene.py    Fetches a scene from Bhoonidhi into data/ (--dry-run only searches). Needs your own account.
   inspect_scene.py  Prints a scene's file headers.
   owslib_check.py   Drives the service with a third-party client (OWSLib).
   validate_schema.py  Checks every kind of reply against the official OGC XML schemas.
-tests/              Automated tests (29). tests/schemas/ holds the official OGC XSD files.
+tests/              Automated tests (150+). tests/schemas/ holds the official OGC XSD files.
 Dockerfile          Recipe for the container image.        pywps.cfg   PyWPS settings.
 data/   cache/   outputs/   workdir/   state/    -> created at run time, NOT in git (see .gitignore).
 ```
@@ -137,20 +141,21 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 | `BHOONIDHI_DATA_DIR` | `/srv/data` in Docker | folder holding the scene folders |
 | `BHOONIDHI_LIVE`, `BHOONIDHI_USER`, `BHOONIDHI_PASSWORD` | unset | live mode (all three needed). Your own account; **local use only** |
 | `BHOONIDHI_LOOKBACK_DAYS`, `BHOONIDHI_MAX_DOWNLOADS` | 60, 2 | live mode: search window when no date is given; downloads per request |
-| `BHOONIDHI_DOWNLOAD_AUTH` | `bearer` | how the token is presented to `/download`: `bearer`, `query` or `token-header` (find out with `fetch_scene.py --probe-download-auth`) |
+| `BHOONIDHI_DOWNLOAD_AUTH` | `bearer` | how a scene is downloaded: `portal` (works: the portal's own route; asks for an emailed code) or an official-API form `bearer`/`query`/`token-header` (all refused by the server) |
 
 ## 7. Data modes
 
-- **Public / default:** the image contains `cache/` (~38 MB, two scenes cut to a ~65 x 55 km area around Hyderabad).
-  No Bhoonidhi account is involved. A box outside the cache gets "no scene covers this bbox".
+- **Public / default:** the image contains `cache/` (about 70 MB: four scenes around Hyderabad, each cut to a ~65 x 55 km
+  area). No Bhoonidhi account is involved. A box outside the prepared scenes gets "no scene covers this bbox", and the
+  map page only lists scenes that fully cover the box you drew.
 - **Full scenes (local):** mount your downloaded `data/` folder over it (table above). Same code, any area those
   scenes cover. Build the cache with `python scripts/build_cache.py` after adding scenes.
-- **Live (local, optional):** with `BHOONIDHI_LIVE=1` and your credentials, a request nothing on disk can answer makes the
-  service search Bhoonidhi, download the scene into the data folder and carry on; the next request for that area is
-  served from disk. **Login and search are verified against the real API; download and unpacking are not yet** (see README
-  section 5). Start with
-  `python scripts/fetch_scene.py --dry-run ...`. Credentials must come from the environment or a git-ignored `.env`,
-  never from the image; do not enable this on a public instance.
+- **Getting scenes from Bhoonidhi (local, needs your own account):** `python scripts/fetch_scene.py --bbox ... --date ... --download-auth portal`.
+  It logs in to the API and searches the STAC catalogue, logs in to the portal (Bhoonidhi emails a 6-digit code, which the
+  script asks you to type), asks the portal's search where the scene lives, downloads about 140 MB, unpacks only the four
+  bands and `BAND_META.txt`, and checks that real pixels cover your area (it refuses scenes whose tilted image misses it).
+  Then `build_cache.py` and a rebuilt image serve it. The service does not do this during a request: nobody is there to type
+  the emailed code. Credentials must come from the environment or a git-ignored `.env`, never from the image.
 
 ## 8. Problems found while building (worth knowing)
 
@@ -182,5 +187,5 @@ checked by the two scripts against the container).
 
 ## 10. Known limits
 
-Radiance by default, so index values are biased and only relative contrast is meaningful (see README section 5). TOA reflectance is implemented but switched off until someone fills `app/esun_liss3.json` from a published source (the numbers are in a paywalled paper; they must not be guessed); only NDVI so far; cache covers Hyderabad
-on two dates; no cloud masking; one scene per answer. See README section 5.
+Radiance by default, so index values are biased and only relative contrast is meaningful (see README section 5). TOA reflectance is implemented but switched off until someone fills `app/esun_liss3.json` from a published source (the numbers are in a paywalled paper; they must not be guessed); four indices (no SAVI/EVI); the public instance serves four scenes around Hyderabad only; no cloud masking; one scene per
+answer. See README section 5.

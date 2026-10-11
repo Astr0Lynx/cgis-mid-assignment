@@ -1,14 +1,23 @@
-# Bhoonidhi WPS: on-demand NDVI over ISRO's EO archive
+# Bhoonidhi WPS: spectral indices on demand from ISRO's EO archive
 
-CyberGIS mid-sem assignment. An **OGC Web Processing Service (WPS 1.0.0, PyWPS)** that computes NDVI for a
-bounding box (anywhere the available scenes cover) from Resourcesat-2 LISS-III scenes published on [Bhoonidhi](https://bhoonidhi.nrsc.gov.in), instead of
-making the user download a whole scene and compute it by hand. It offers NDVI, NDWI, MNDWI and NDBI.
+CyberGIS mid-sem assignment. An **OGC Web Processing Service (WPS 1.0.0, PyWPS)** that computes NDVI, NDWI, MNDWI or
+NDBI for a bounding box from Resourcesat-2/2A LISS-III scenes published on
+[Bhoonidhi](https://bhoonidhi.nrsc.gov.in), instead of making the user download a whole scene and compute it by hand.
+It comes with an interactive map page that is simply a client of the WPS.
 
-**Live endpoint:** `https://triangle-overpass-flirt.ngrok-free.dev/wps`
-([landing page](https://triangle-overpass-flirt.ngrok-free.dev/), [GetCapabilities](https://triangle-overpass-flirt.ngrok-free.dev/wps?service=WPS&request=GetCapabilities)).
-It runs on the author's machine behind an ngrok tunnel, so it is up only while that machine is running and the
-address changes if the tunnel is restarted; see [docs/DEMO.md](docs/DEMO.md). The public instance serves the cached
-Hyderabad area only (section 5). Everything below can also be run locally (section 4).
+![The explorer page: a drawn box over central Hyderabad with the NDVI result overlaid](docs/explorer-light.png)
+
+**Try it:** map page `https://triangle-overpass-flirt.ngrok-free.dev/` · WPS endpoint
+`https://triangle-overpass-flirt.ngrok-free.dev/wps`
+([GetCapabilities](https://triangle-overpass-flirt.ngrok-free.dev/wps?service=WPS&request=GetCapabilities)).
+It runs on the author's machine behind an ngrok tunnel, so it is up only while that machine is running and the address
+changes if the tunnel is restarted; see [docs/DEMO.md](docs/DEMO.md). The public instance serves only the scenes
+prepared in advance around Hyderabad (section 5). Everything below can also be run locally (section 4).
+
+**How it relates to Bhoonidhi:** it is an unofficial, external service built on data downloaded from Bhoonidhi, not part
+of Bhoonidhi (only NRSC can add services to its own infrastructure). The pixels are real Bhoonidhi products and the
+processing is real; the public instance serves a prepared subset, and a command-line step (section 4) can fetch further
+scenes from Bhoonidhi.
 
 ## 1. The gap
 
@@ -61,13 +70,20 @@ Endpoint (local): `http://localhost:5000/wps`
 | `DescribeProcess` | yes |
 | `Execute` | yes: KVP (GET) and XML (POST), synchronous and asynchronous (`storeExecuteResponse=true&status=true`) |
 
+### Interactive map page
+`/` serves a small web page (Leaflet, vendored, no CDN): draw an area on the map (the prepared scenes are outlined),
+pick a scene date and an index, press **Run WPS process**, and the result is overlaid with a legend, statistics, download
+links and the exact WPS `Execute` request that was sent. Light and dark modes are supported. The page computes nothing
+itself: every result comes from an ordinary WPS request, so any WPS client can do the same. Two helper endpoints feed it:
+`/api/info` (indices and limits) and `/api/coverage` (footprints of the prepared scenes, from their true image corners).
+
 ### Processes
 | Identifier | What it does |
 |---|---|
 | `ndvi` | NDVI for a bbox (the headline process). Output `ndvi`. |
 | `spectral-index` | Same pipeline with a required `index` input: `ndvi`, `ndwi`, `mndwi` or `ndbi`. Output `index`. |
 
-Both take the same other inputs and return the same two outputs (a GeoTIFF and a stats JSON). Indices (LISS-III bands:
+Both take the same other inputs and return the same three outputs (a GeoTIFF, a colour preview PNG and a stats JSON). Indices (LISS-III bands:
 B2 green, B3 red, B4 NIR, B5 SWIR), each a normalised difference `(a-b)/(a+b)`:
 
 | `index` | Formula | Highlights |
@@ -87,7 +103,8 @@ reflectance and is meaningless on radiance; it waits for TOA reflectance).
 | Input | `date` | Literal (string) | `YYYY-MM-DD`. Optional; default is the newest scene that fully covers the bbox. |
 | Input | `radiometry` | Literal, `radiance` \| `toa` | Optional, default `radiance`. `toa` = top-of-atmosphere reflectance; it is implemented but **refused with an explanatory error until a cited per-band solar-irradiance (ESUN) table is configured** (see section 5). |
 | Output | `ndvi` | Complex, `image/tiff; subtype=geotiff` | Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS. Returned by reference. |
-| Output | `stats` | Complex, `application/json` | scene id, date, bbox, shape, min/mean/max, valid fraction, radiometry mode. |
+| Output | `preview` | Complex, `image/png` | Colour PNG in latitude/longitude for web maps: no-data transparent, colours stretched between the 2nd and 98th percentile (relative contrast only). Its map bounds and legend are in `stats`. |
+| Output | `stats` | Complex, `application/json` | scene id, date, bbox, shape, min/mean/max, valid fraction, radiometry mode, preview bounds and legend. |
 
 Errors are returned as proper OGC `ExceptionReport`s (unknown process, invalid or inverted bbox, bbox over the size
 limit, bad date, no scene covering the request).
@@ -162,14 +179,17 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
   private to each process. Async jobs run in forked children, so the server never saw them finish and, after
   `parallelprocesses` (2) jobs, queued every new async job forever. `app/server.py` points it at a file database
   (reset at start-up; one gunicorn worker).
-- **Live mode** (`app/bhoonidhi_client.py`, `app/live_fetch.py`; off unless `BHOONIDHI_LIVE=1` and credentials are
-  in the environment): if no local scene covers a request, search Bhoonidhi (STAC `POST /data/search`, online
-  Resourcesat-2/2A LISS-III standard products only), keep scenes whose footprint contains the bbox, download the newest
-  (at most 2 attempts per request, to protect the account's quota), unpack only the four bands and `BAND_META.txt`, check
-  that real pixels cover the bbox, then compute as usual. Tokens are cached and refreshed (authentication is limited to
-  20 calls per hour), searches are spaced to the 3-per-second limit, busy or interrupted downloads are retried after
-  waiting, passwords never appear in logs or error messages, and the scene is kept so the next request is local.
-  Use async Execute for it: a download takes minutes.
+- **Fetching scenes from Bhoonidhi** (`app/bhoonidhi_client.py`, `app/live_fetch.py`, `scripts/fetch_scene.py`;
+  verified against the real Bhoonidhi, see section 5). Search uses the official STAC API (`POST /data/search`; online
+  Resourcesat-2/2A LISS-III standard products whose footprint contains the area). The official API's `/download`
+  refused every way of sending the token ("Invalid session detected"), so the download uses the **portal's own
+  route**, as the unofficial open-source client does: log in to the portal (a separate login that emails a one-time
+  code), ask the portal's search for the scene's real directory and file name, then `GET /bhoonidhi/data/<satellite>/<sensor>/<year>/<MON>/<file>.zip`.
+  Only the four bands and `BAND_META.txt` are unpacked, and real pixel coverage is checked before the scene is
+  accepted. Bhoonidhi's footprints are rectangles but the images are tilted: a 9 Oct 2026 scene that the search listed as
+  covering Hyderabad had 0% valid pixels in the city centre and was correctly refused. At most two downloads are made
+  per request, logins and searches respect the documented rate limits, retries wait, and secrets are scrubbed from every
+  message.
 - **Strict MIME type** `image/tiff; subtype=geotiff` on the output, and `/outputs/` is served statically so async
   status documents and results are reachable.
 - **Bounded cost:** requests above 16 Mpixel (~96 x 96 km at 24 m, `MAX_PIXELS`) are rejected.
@@ -191,17 +211,17 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 # behind a tunnel, tell the service its public URL so status/output links are correct:
 #   docker run -p 5000:5000 -e PUBLIC_BASE_URL=https://<your-tunnel> bhoonidhi-wps
 ```
-### Live mode (local only, needs your own Bhoonidhi account)
+### Fetching more scenes from Bhoonidhi (needs your own Bhoonidhi account)
 ```bash
-cp .env.example .env        # then fill in BHOONIDHI_USER and BHOONIDHI_PASSWORD; .env is git-ignored
-python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run   # log in + search, downloads nothing
-python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-10-09 --probe-download-auth   # how /download wants the token
-python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-05-23   # download into data/
-# or let the service fetch on demand (data/ must be writable, so no ":ro"; no quotes inside .env for --env-file):
-docker run -p 5000:5000 --env-file .env -v "$PWD/data:/srv/data" bhoonidhi-wps
+cp .env.example .env        # fill in BHOONIDHI_USER and BHOONIDHI_PASSWORD; .env is git-ignored, never share it
+python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run                      # log in + search, downloads nothing
+python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-10-02 --download-auth portal
+#   -> asks for the 6-digit code Bhoonidhi emails you, downloads ~140 MB into data/, checks real pixel coverage
+python scripts/build_cache.py && docker build -t bhoonidhi-wps .                           # serve the new scene
 ```
-Never put credentials in the image or the repository, and never run live mode on a publicly exposed instance: anyone
-who can reach it could spend your account's download quota.
+(`--bbox` is `miny,minx,maxy,maxx`.) The service itself does not fetch scenes during a request: the portal login needs a
+fresh emailed code, and a service cannot type one, so it fails with a clear message instead (section 5). Never put
+credentials in the image or the repository, and never enable `BHOONIDHI_LIVE` on a publicly exposed instance.
 
 A step-by-step live demo script: **[docs/DEMO.md](docs/DEMO.md)**.
 
@@ -216,24 +236,25 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   but needs the per-band solar irradiance (ESUN). I could not find a citable open source for the LISS-III values and did
   not guess them, so the service refuses `toa` until `app/esun_liss3.json` is filled from a publication (`later.md` says
   how). Radiance carries no solar-irradiance correction; since red sunlight is stronger than NIR, NDVI is expected to be
-  biased low (the Hyderabad 23 May clip has a median NDVI of about -0.05), but I could not quantify the bias without
+  biased low (the Hyderabad 23 May clip has a median NDVI of about -0.05; 2 Oct is greener, about +0.06 on the mean, as expected after the monsoon, but the sensors differ so compare patterns, not numbers), but I could not quantify the bias without
   the ESUN values. Treat values as relative. The priced BOA surface-reflectance product is the proper alternative.
-- **Public instance serves only the cached area and scenes** (Hyderabad, 18 and 23 May 2026; the 18 May scene covers only the western part of the city centre, so
-  most requests resolve to 23 May); anything else returns a
-  clean "no scene covers this request" exception.
+- **Public instance serves only the prepared scenes shown on the map:** four scenes around Hyderabad, each cut to
+  about 65 x 55 km: 18 and 23 May 2026 (Resourcesat-2), 2 Oct 2026 (Resourcesat-2A) and 9 Oct 2026 (Resourcesat-2). The 18 May and
+  9 Oct scenes are on the tilted western track and cover only the west of the city centre, so for the central-Hyderabad
+  demo box the choices are 23 May and 2 Oct. Anything else returns a clean "no scene covers this request" exception.
 - **Result files expire.** Stored results (the status document and `ndvi.tif` for async or reference responses) are
   deleted after `OUTPUT_TTL_HOURS` (default 24) so a long-running public instance does not fill its disk; request again
   to get a fresh link.
-- **Live mode (fetch the scene from Bhoonidhi on demand) is only partly verified against the real API.** The client
-  follows NRSC's published API specification and is tested against a fake of it (`tests/`). The account owner ran
-  `python scripts/fetch_scene.py --dry-run` against the real Bhoonidhi on 2026-10-10: **login and STAC search worked**
-  (no one-time code was needed), returning 18 online Resourcesat-2/2A LISS-III scenes for central Hyderabad over 60 days,
-  with footprints and acquisition dates parsed correctly. **Not yet verified: the download and unpacking.** A first real attempt was refused with `401 Invalid session detected! Please login.` when the token was sent as a Bearer header, which is what the specification documents (the unofficial portal client sends it as `?token=`); `--probe-download-auth` tries the plausible forms and `BHOONIDHI_DOWNLOAD_AUTH` selects the one that works. None of the three API forms was accepted, and the portal's own data path (the route the unofficial client uses) refused the API token as well ("permission denied"), so a `portal` route with the portal's own, separate login (which may email a one-time code) has been added and is being tried. (The
-  specification does not say what `/download` returns; the client accepts a zip with the four band GeoTIFFs and
-  `BAND_META.txt` and fails clearly otherwise) and the end-to-end WPS request that triggers it. It is for a locally run
-  service only: the public instance never has credentials and runs cache-only.
+- **Fetching from Bhoonidhi is a command-line step, not something the service does unattended.** Verified against the
+  real Bhoonidhi on 2026-10-11 by the account owner: API login and STAC search; the portal login with its emailed
+  one-time code; the portal's own search; a 141 MB download and unpack; and the coverage check (it accepted the 2 Oct
+  Resourcesat-2A scene at 100% and refused the 9 Oct scene). The service's own request-time mode calls the same code but
+  has nobody to type the emailed code, so it fails with a clear message; saving and reusing the portal session would fix
+  that and is not implemented. The portal route uses endpoints NRSC does not document, learnt from a third-party client,
+  so it may change. The documented official `/download` was refused ("Invalid session detected") for every way of sending the
+  token; the cause is unknown (possibly an account permission). The public instance never has credentials.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
-  time-series; the two scenes use different UTM zones so combining them would need reprojection.
+  time-series; scenes lie in different UTM zones (43N/44N), so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
   (Hyderabad, 23 May): every pixel has a positive MNDWI (minimum 0.61) and the median NDBI is -0.66, most likely because the
   SWIR band's radiance range (Lmax 7.5) is tiny next to green's (Lmax 52); not verified. The indices do pick out the right places: Hussain Sagar lake sits at
@@ -242,7 +263,7 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 - Four indices; SAVI and EVI are not offered (see Processes).
 - Not independently validated against a reference NDVI product. Manual checks done by the author: the GeoTIFF output
   loads in QGIS over central Hyderabad with the expected CRS and layout, and the public URL answers from a phone on
-  mobile data. The automated lake test is a relative check only.
+  mobile data. The automated lake test is a relative check only. The map page's colours were checked in headless-browser screenshots; the click-to-draw interaction itself is not covered by an automated browser test.
 
 ## 6. Data and attribution
 Contains data from Resourcesat-2 LISS-III, **ISRO-IRS**, distributed through Bhoonidhi (NRSC/ISRO). Scenes are not
@@ -258,11 +279,12 @@ products. This is a coursework prototype; read the EULA before reusing or republ
 
 ## 7. Repository layout
 ```
-app/            service code (radiometry, indices, scene clipping, WPS process, Flask server, Bhoonidhi client)
+app/            service code: radiometry, indices, scene clipping, WPS processes, colour preview, Flask server, Bhoonidhi client
+app/static/     the interactive map page (HTML, JS, CSS, vendored Leaflet)
 scripts/        inspect_scene.py, build_cache.py, fetch_scene.py, owslib_check.py, validate_schema.py
 .github/        CI workflow (runs the tests that need no scenes)
 tests/          unit, WPS protocol and schema-validation tests (tests/schemas = official OGC XSDs)
-docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (live demo script)
+docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (demo script), screenshots
 Dockerfile, pywps.cfg, requirements.txt
 later.md        deferred work and priorities
 ```
