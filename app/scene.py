@@ -130,6 +130,9 @@ def find_scenes(bbox, data_dir: Path = DATA_DIR, min_valid: float = 0.95) -> lis
     return sorted(hits, key=lambda s: s.date, reverse=True)
 
 
+ATTRIBUTION = "ISRO-IRS"  # the caption Bhoonidhi's EULA asks for on the data and anything derived from it
+
+
 def write_cog(clip: Clip, path: Path) -> Path:
     """Write a float32 NaN-nodata COG (via a temporary plain GeoTIFF)."""
     path = Path(path)
@@ -139,6 +142,7 @@ def write_cog(clip: Clip, path: Path) -> Path:
                    crs=clip.crs, transform=clip.transform, nodata=np.nan)
     with rasterio.open(tmp, "w", **profile) as dst:
         dst.write(clip.data, 1)
+        dst.update_tags(ATTRIBUTION=ATTRIBUTION, SOURCE="Resourcesat LISS-III, Bhoonidhi (NRSC/ISRO)", SCENE_ID=clip.scene_id)
     rio_copy(tmp, path, driver="COG", compress="DEFLATE")
     tmp.unlink()
     return path

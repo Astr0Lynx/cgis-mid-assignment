@@ -309,17 +309,36 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   loads in QGIS over central Hyderabad with the expected CRS and layout, and the public URL answers from a phone on
   mobile data. The automated lake test is a relative check only. The map page's colours were checked in headless-browser screenshots; the click-to-draw interaction itself is not covered by an automated browser test.
 
-## 6. Data and attribution
-Contains data from Resourcesat-2 LISS-III, **ISRO-IRS**, distributed through Bhoonidhi (NRSC/ISRO). Scenes are not
-redistributed in this repository (`data/` and `cache/` are git-ignored); the public instance serves *derived* index
-rasters and statistics, not the raw bands.
+## 6. Data, attribution and the licence
 
-Licence status, stated carefully: under the Indian Space Policy 2023 as described in Bhoonidhi's own material, data
-coarser than 5 m (LISS-III is 23.5 m) is open data, and vegetation and water indices are among the thematic products
-ISRO releases free. **I could not read the text of the Bhoonidhi End User Licence Agreement itself** (shown on the
-portal's login page), so I have not confirmed its attribution or redistribution clauses for third-party derived
-products. This is a coursework prototype; read the EULA before reusing or republishing the outputs, and ask NRSC
-(bhoonidhi@nrsc.gov.in) if in doubt.
+Contains data from Resourcesat-2/2A LISS-III, **ISRO-IRS**, distributed through Bhoonidhi (NRSC/ISRO). Scenes are not
+redistributed in this repository (`data/` and `cache/` are git-ignored), and the service never serves the raw bands: it
+serves *derived* index rasters, previews and statistics.
+
+I read the Bhoonidhi End User Licence Agreement (EULA, shown on the portal's login page, read 2026-10-11) and compared it
+with what this service does. This is my reading of the text, not legal advice.
+
+| EULA clause (paraphrased) | What the service does |
+|---|---|
+| Data of 5 m ground sampling distance or coarser, and derived thematic data, is free and open to registered users, "as is where is". LISS-III is 23.5 m. | Only LISS-III (open data) is used. |
+| NRSC grants a worldwide, royalty-free right to "publish, reproduce, distribute, communicate in public domain, combine with other datasets" the free and open data, so far as lawful. | Derived indices are published openly; raw bands are never served. |
+| "Acknowledgement or credit of the data should be provided by including a text citation... The attribution to be used in caption shall be **ISRO-IRS**." | The map page footer, this README, each output GeoTIFF (tags `ATTRIBUTION=ISRO-IRS`, `SOURCE`, `SCENE_ID`) and the statistics JSON (`attribution`) carry it. |
+| Data must be used for lawful services; "the original data will not be re-distributed on commercial basis" and "shall not be commercialized in its original form". | Non-commercial coursework; original data is not redistributed at all. |
+| Only registered users can access the data; the registration credentials are verifiable. | Fetching a new scene requires the visitor to log in with their **own** registered account. Scenes fetched that way are kept on the server for 6 hours and used only to compute derived outputs for later visitors; no one receives the raw bands. |
+| No warranty of accuracy or fitness; products "may contain geometric and or radiometric artefacts"; NRSC "disowns liability" for commercial and legal uses; users indemnify NRSC. | See the disclaimer below. |
+| NRSC may change the mode of access to data, and API access is arranged through bhoonidhi@nrsc.gov.in. | The portal route I use for downloads is not a documented interface (section 3) and may change. |
+
+**Disclaimer.** This is an unofficial coursework prototype, not part of Bhoonidhi or endorsed by NRSC/ISRO. Results are
+provided as is, without any warranty of accuracy or fitness: indices are computed on at-sensor radiance (section 5), the
+data may contain artefacts, and nothing here should be used for commercial, legal or safety decisions.
+
+**What I could not settle from the text alone.** (1) The EULA says data is available to *registered* users, while this
+service shows derived indices to anyone who opens the page; the grant to "publish... communicate in public domain" and the
+inclusion of "derived thematic data" in the open data definition make this look permitted, but I have not asked NRSC.
+(2) Whether relaying a visitor's own Bhoonidhi login through this server, and downloading through the portal's
+undocumented route instead of the official API (whose `/download` was refused), is acceptable use. The login is always the
+visitor's own and the password is not stored, but the EULA does not address it, and NRSC may suspend a registration "for
+any reason". If this service were to run beyond coursework, ask NRSC (data@nrsc.gov.in or bhoonidhi@nrsc.gov.in) first.
 
 ## 7. Repository layout
 ```

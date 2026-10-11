@@ -20,7 +20,7 @@ from app.bhoonidhi_client import BhoonidhiError
 from app.indices import INDICES
 from app.preview import render_preview
 from app.radiometry import MODES, EsunNotConfigured
-from app.scene import DATA_DIR, find_scenes, write_cog
+from app.scene import ATTRIBUTION, DATA_DIR, find_scenes, write_cog
 
 GEOTIFF = Format("image/tiff; subtype=geotiff", extension=".tif")
 JSON = Format("application/json", extension=".json")
@@ -180,6 +180,7 @@ class IndexProcess(Process):
             "min": float(valid.min()), "mean": float(valid.mean()), "max": float(valid.max()),
             "valid_fraction": float(valid.size / clip.data.size),
             "radiometry": mode,
+            "attribution": ATTRIBUTION,
             "preview": {"bounds_south_west_north_east": list(pv.bounds), "vmin": pv.vmin, "vmax": pv.vmax,
                         "ramp": pv.ramp, "note": "colours are a per-request percentile stretch: relative contrast only"},
         }
