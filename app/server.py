@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory
 from lxml import etree
 from pywps import Service, configuration
-from pywps.exceptions import InvalidParameterValue
+from pywps.exceptions import InvalidParameterValue, VersionNegotiationFailed
 
 import app.pywps_compat  # noqa: F401  (bbox axis order, see module docstring)
 from app.cleanup import purge_fetched, start_background_purge, start_periodic
@@ -104,9 +104,41 @@ def _requested_outputs():
     return process, wanted
 
 
+SUPPORTED_VERSION = "1.0.0"
+
+
+def _unsupported_version():
+    """An OGC exception if the request asks for a WPS version other than 1.0.0 (None otherwise).
+
+    PyWPS would answer a 2.0.0 request with a half-2.0 capabilities document or with 1.0.0 documents labelled 1.0.0; neither
+    is honest for a service that implements only 1.0.0, so such requests get a proper exception instead.
+    GetCapabilities negotiates through AcceptVersions (VersionNegotiationFailed); other operations carry `version`.
+    """
+    if request.method == "GET":
+        args = {k.lower(): v for k, v in request.args.items()}
+        operation, accept, version = args.get("request", "").lower(), args.get("acceptversions"), args.get("version")
+    else:
+        try:
+            doc = etree.fromstring(request.get_data())
+        except etree.XMLSyntaxError:
+            return None
+        operation = etree.QName(doc).localname.lower()
+        accept = ",".join((v.text or "").strip() for v in doc.xpath(".//*[local-name()='AcceptVersions']/*[local-name()='Version']")) or None
+        version = doc.get("version")
+    if operation == "getcapabilities":
+        if accept and SUPPORTED_VERSION not in [v.strip() for v in accept.split(",")]:
+            return VersionNegotiationFailed(f"Only WPS {SUPPORTED_VERSION} is supported (AcceptVersions={accept})")
+    elif version and version != SUPPORTED_VERSION:
+        return InvalidParameterValue(f"Only WPS {SUPPORTED_VERSION} is supported (version={version})", "version")
+    return None
+
+
 @flask_app.route("/wps", methods=["GET", "POST"])
 def wps():
     process, wanted = _requested_outputs()
+    refused = _unsupported_version()
+    if refused is not None:
+        return refused
     known = {o.identifier for p in service.processes.values() if p.identifier == process for o in p.outputs}
     for param, identifier in wanted:
         if known and identifier not in known:

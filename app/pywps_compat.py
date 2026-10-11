@@ -13,6 +13,7 @@ also yields the raw corner order from the document, matching KVP.
 """
 from collections import defaultdict
 
+import re
 import importlib
 
 # pywps.app re-exports the WPSRequest *class* under the module's name, so import the module explicitly
@@ -76,6 +77,9 @@ _EXECUTE_TEMPLATE_FIXES = [
 class _PatchedLoader(PackageLoader):
     def get_source(self, environment, template):
         source, filename, uptodate = super().get_source(environment, template)
+        if template.endswith("1.0.0/capabilities/main.xml"):
+            # PyWPS also advertises 2.0.0, but only its 1.0.0 documents are implemented: say so honestly
+            source = re.sub(r"[ \t]*<ows:ServiceTypeVersion>2\.0\.0</ows:ServiceTypeVersion>\s*\n", "", source)
         if template.endswith("execute/main.xml"):
             for old, new in _EXECUTE_TEMPLATE_FIXES:
                 source = source.replace(old, new)
