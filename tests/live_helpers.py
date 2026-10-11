@@ -97,6 +97,8 @@ class FakeBhoonidhi:
         self.calls = []  # (method, path, kwargs)
         self.download_statuses = {}  # item id -> list of statuses to return before success
         self.download_response = None  # optional callable(kwargs) -> FakeResponse, overrides /download entirely
+        self.portal_accepts = True  # does the portal data path accept the API access token as ?token= ?
+        self.portal_paths = None  # optional set of exact paths that exist on the portal (others give 404)
         self.download_accepts = {"bearer"}  # token styles /download accepts (the specification says bearer)
         self.valid_tokens = set()
         self._n = 0
@@ -106,6 +108,16 @@ class FakeBhoonidhi:
         self.calls.append((method, path, kw))
         if path == "/auth/token":
             return self._auth(kw["json"])
+        if path.startswith("/bhoonidhi/data/"):  # the portal's own data path (inferred from the unofficial client)
+            q = kw.get("params") or {}
+            if not self.portal_accepts or q.get("token") not in self.valid_tokens:
+                return FakeResponse(401, {"ErrorCode": "401", "Description": "UNAUTHORIZED",
+                                          "Action": "Invalid session detected! Please login."})
+            if (self.portal_paths is not None and path not in self.portal_paths) or q.get("product_id") not in self.archives:
+                return FakeResponse(404, "<html>Not Found</html>", reason="Not Found")
+            data = self.archives[q["product_id"]]
+            return FakeResponse(200, chunks=[data[i:i + 4096] for i in range(0, len(data), 4096)],
+                                headers={"Content-Length": str(len(data)), "Content-Type": "application/zip"})
         headers = kw.get("headers") or {}
         if path == "/download":  # the token may arrive in different forms; accept only the configured ones
             sent = {"bearer": headers.get("Authorization", "").removeprefix("Bearer "),

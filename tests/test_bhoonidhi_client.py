@@ -336,3 +336,57 @@ def test_download_with_the_wrong_style_fails_with_the_servers_explanation(tmp_pa
 def test_unknown_download_style_is_rejected_up_front():
     with pytest.raises(BhoonidhiError, match="unknown download auth style"):
         BhoonidhiClient("u", "p", download_auth="cookie")
+
+
+# ---- the portal's own data path ------------------------------------------------------------------------------------------
+
+def test_portal_candidates_follow_the_inferred_layout():
+    client, _ = make_client(FakeBhoonidhi())
+    urls = client.portal_candidates(item())  # scene of 23 May 2026, ResourceSat-2
+    assert [u.split("nrsc.gov.in")[1] for u in urls] == [
+        f"/bhoonidhi/data/RS2/3/2026/05/{SCENE}.zip", f"/bhoonidhi/data/RS2/3/2026/04/{SCENE}.zip"]
+    twoa = Item("RA302OCT2026050952010000060PSANSTUC00GTDF", "ResourceSat-2A_LISS3_L2", date(2026, 10, 2), None, True)
+    assert client.portal_candidates(twoa)[0].endswith("/bhoonidhi/data/R2A/3/2026/10/" + twoa.id + ".zip")
+    assert client.portal_candidates(Item("x", "Sentinel-2_MSI", date(2026, 1, 1), None, True)) == []
+
+
+def test_portal_probe_tries_the_previous_month_and_reports_no_secret(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_paths = {f"/bhoonidhi/data/RS2/3/2026/04/{SCENE}.zip"}  # only the earlier month exists
+    client, _ = make_client(api)
+    results = client.probe_portal_download(item())
+    assert [r["status"] for r in results] == [404, 200]  # stopped at the first 200
+    assert results[1]["starts_with"] == "PK (a zip archive)" and results[1]["path"].endswith(f"2026/04/{SCENE}.zip")
+    assert "token-1" not in str(results)
+
+
+def test_portal_probe_shows_a_refusal_when_the_api_token_is_not_accepted(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_accepts = False
+    client, _ = make_client(api)
+    results = client.probe_portal_download(item())
+    assert all(r["status"] == 401 and "Invalid session" in r["starts_with"] for r in results)
+
+
+def test_download_through_the_portal_route_unpacks_the_scene(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    client = BhoonidhiClient("student", "correct-horse", session=api, sleep=lambda s: None, download_auth="portal")
+    folder = client.download_scene(item(), tmp_path / "data")
+    assert sorted(p.name for p in folder.iterdir()) == ["BAND2.tif", "BAND3.tif", "BAND4.tif", "BAND5.tif", "BAND_META.txt"]
+    assert api.count("/download") == 0  # never touched the official API's download
+    sent = next(kw for _, path, kw in api.calls if path.startswith("/bhoonidhi/data/"))
+    assert sent["params"]["product_id"] == SCENE and "Authorization" not in (sent.get("headers") or {})
+
+
+def test_portal_download_refusal_is_reported_clearly(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_accepts = False
+    client = BhoonidhiClient("student", "correct-horse", session=api, sleep=lambda s: None, download_auth="portal")
+    with pytest.raises(BhoonidhiError, match="401.*Invalid session"):
+        client.download_scene(item(), tmp_path / "data")
+
+
+def test_portal_for_an_unknown_collection_says_so(tmp_path):
+    client = BhoonidhiClient("u", "p", session=FakeBhoonidhi(), sleep=lambda s: None, download_auth="portal")
+    with pytest.raises(BhoonidhiError, match="no portal download address"):
+        client.download_scene(Item("x", "Sentinel-2_MSI", date(2026, 1, 1), None, True), tmp_path / "data")

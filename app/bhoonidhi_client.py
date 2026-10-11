@@ -18,7 +18,8 @@ import shutil
 import time
 import zipfile
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from urllib.parse import urlsplit
 from pathlib import Path
 
 import requests
@@ -30,7 +31,14 @@ SCENE_FILES = ("BAND2.tif", "BAND3.tif", "BAND4.tif", "BAND5.tif", "BAND_META.tx
 RETRY_STATUSES = {412, 429, 503, 504}
 # How the access token is presented to /download. The specification says "bearer"; the server answered a Bearer
 # request with 401 "Invalid session detected", and the unofficial portal client sends the token as ?token=...
-DOWNLOAD_AUTH_STYLES = ("bearer", "query", "token-header")
+API_AUTH_STYLES = ("bearer", "query", "token-header")  # ways to call the official API's /download
+# "portal": download from the portal's own data path instead of the official API. The path layout, the satellite
+# code and the ?token= convention come from the unofficial client geovicco-dev/bhoonidhi-downloader, NOT from NRSC's
+# documentation, so they are inferred and may need adjusting (see portal_candidates).
+DOWNLOAD_AUTH_STYLES = API_AUTH_STYLES + ("portal",)
+PORTAL_URL = "https://bhoonidhi.nrsc.gov.in"
+PORTAL_SATELLITE = {"ResourceSat-2_LISS3_L2": "RS2", "ResourceSat-2A_LISS3_L2": "R2A"}  # the portal's SATELLITE codes
+PORTAL_LISS3_SENSOR = "3"  # the portal's short code for the LISS-III sensor in its data path
 AUTH_ERRORS = {
     400: "the request keys were rejected",
     401: "the user id or password was rejected",
@@ -92,10 +100,12 @@ def footprint_contains_bbox(geometry: dict | None, bbox) -> bool:
 
 class BhoonidhiClient:
     def __init__(self, user: str, password: str, base_url: str = BASE_URL, session=None,
-                 sleep=time.sleep, clock=time.monotonic, retry_waits=(5, 20, 60), download_auth: str = "bearer"):
+                 sleep=time.sleep, clock=time.monotonic, retry_waits=(5, 20, 60), download_auth: str = "bearer",
+                 portal_url: str = PORTAL_URL):
         if download_auth not in DOWNLOAD_AUTH_STYLES:
             raise BhoonidhiError(f"unknown download auth style {download_auth!r}; use one of {DOWNLOAD_AUTH_STYLES}")
         self.download_auth = download_auth
+        self.portal_url = portal_url.rstrip("/")
         if not user or not password:
             raise BhoonidhiError("Bhoonidhi credentials are not set (BHOONIDHI_USER / BHOONIDHI_PASSWORD)")
         self._user, self._password = user, password
@@ -225,6 +235,70 @@ class BhoonidhiClient:
         except requests.RequestException as e:
             raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
 
+    def portal_candidates(self, item: Item) -> list[str]:
+        """Candidate portal download addresses (without the token) for a scene.
+
+        Layout from the unofficial client: <portal>/bhoonidhi/data/<satellite>/<sensor>/<year>/<month>/<file>.zip, where
+        the year and month come from the product's directory on the portal. That is the acquisition month in the
+        examples I know of, but it might be the month the product was generated, so the previous month is also tried.
+        """
+        satellite = PORTAL_SATELLITE.get(item.collection)
+        if not satellite or not item.date:
+            return []
+        first = item.date.replace(day=1)
+        months = [first, first - timedelta(days=1)]
+        return [f"{self.portal_url}/bhoonidhi/data/{satellite}/{PORTAL_LISS3_SENSOR}/{m.year}/{m.month:02d}/{item.id}.zip"
+                for m in months]
+
+    def _portal_get(self, url: str, item: Item, **kwargs):
+        token = self._ensure_token()
+        try:
+            return self.session.request("GET", url, params={"token": token, "product_id": item.id}, **kwargs)
+        except requests.RequestException as e:
+            raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
+
+    def _portal_download(self, item: Item):
+        """Open the download on the portal: the first candidate address that answers 200, else the last answer."""
+        last = None
+        for url in self.portal_candidates(item):
+            r = self._portal_get(url, item, stream=True, timeout=(15, 300))
+            if r.status_code == 200:
+                return r
+            last = r
+        if last is None:
+            raise BhoonidhiError(f"no portal download address is known for collection {item.collection!r}")
+        return last
+
+    def probe_portal_download(self, item: Item) -> list[dict]:
+        """Ask the portal's data path for the scene, once per candidate address, reading only the first bytes.
+
+        Uses the access token from the official API login. Stops at the first HTTP 200. Reports the address path (never
+        the token) and what came back.
+        """
+        results = []
+        for url in self.portal_candidates(item):
+            r = self._portal_get(url, item, stream=True, timeout=(15, 60), allow_redirects=False)
+            first = b""
+            try:
+                first = next(iter(r.iter_content(chunk_size=200)), b"")
+            finally:
+                close = getattr(r, "close", None)
+                if close:
+                    close()
+            location = r.headers.get("Location")
+            results.append({
+                "path": urlsplit(url).path,
+                "status": r.status_code,
+                "content_type": r.headers.get("Content-Type"),
+                "content_length": r.headers.get("Content-Length"),
+                "location": (lambda u: f"{u.scheme}://{u.netloc}{u.path}")(urlsplit(location)) if location else None,
+                "starts_with": "PK (a zip archive)" if first.startswith(b"PK")
+                else self._scrub(" ".join(first[:160].decode("latin-1").split())),
+            })
+            if r.status_code == 200:
+                break
+        return results
+
     def probe_download_auth(self, item: Item) -> list[dict]:
         """Try each way of presenting the token to /download; stop at the first the server accepts (HTTP 200).
 
@@ -232,7 +306,7 @@ class BhoonidhiClient:
         non-secret summary per attempt.
         """
         results = []
-        for style in DOWNLOAD_AUTH_STYLES:
+        for style in API_AUTH_STYLES:
             r = self._download_request({"id": item.id, "collection": item.collection}, style, stream=True,
                                        timeout=(15, 60), allow_redirects=False)
             first = b""
@@ -334,6 +408,8 @@ class BhoonidhiClient:
                 self._sleep(wait)
             if self.download_auth == "bearer":
                 r = self._call("GET", "/download", params=params, stream=True, timeout=(15, 300))
+            elif self.download_auth == "portal":
+                r = self._portal_download(item)
             else:
                 r = self._download_request(params, self.download_auth, stream=True, timeout=(15, 300))
             if r.status_code in RETRY_STATUSES and attempt < len(self.retry_waits):

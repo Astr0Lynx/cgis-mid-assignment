@@ -32,6 +32,9 @@ def main() -> int:
     ap.add_argument("--probe-download-auth", action="store_true",
                     help="try each way of presenting the token to /download (Bearer header, ?token=, token header) "
                          "and report which one the server accepts; downloads nothing")
+    ap.add_argument("--probe-portal-download", action="store_true",
+                    help="ask the portal's own data path (what the unofficial client uses) for the scene with your API "
+                         "token; reads only the first bytes, downloads nothing")
     ap.add_argument("--settle", type=float, default=0.0, metavar="SECONDS",
                     help="with --probe-download-auth: wait this long after login and search before asking /download")
     ap.add_argument("--diagnose-download", action="store_true",
@@ -67,6 +70,19 @@ def main() -> int:
             print(f"  {i.date}  {i.collection:26s} {i.id}  ({covers})")
         if args.dry_run:
             print("Dry run: nothing downloaded.")
+            return 0
+        if args.probe_portal_download:
+            options = live_fetch.candidates(bbox, wanted, client)
+            if not options:
+                print("No scene to probe: none covers the bbox.")
+                return 1
+            print(f"Asking the portal's data path for {options[0].id} with your API token (nothing is downloaded):")
+            results = client.probe_portal_download(options[0])
+            for r in results:
+                print(f"  {r['path']}\n      status={r['status']}  {r['content_type']}  length={r['content_length']}"
+                      f"  location={r['location']}\n      {r['starts_with']}")
+            print("RESULT: set BHOONIDHI_DOWNLOAD_AUTH=portal to use it." if any(r["status"] == 200 for r in results)
+                  else "RESULT: not accepted; paste this output.")
             return 0
         if args.probe_download_auth:
             options = live_fetch.candidates(bbox, wanted, client)
