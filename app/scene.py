@@ -10,10 +10,11 @@ import rasterio
 from rasterio.errors import WindowError
 from rasterio.shutil import copy as rio_copy
 from rasterio.transform import Affine
-from rasterio.warp import transform_bounds
+from rasterio.warp import transform, transform_bounds
 from rasterio.windows import Window, from_bounds
 
 from app import indices
+from app.geometry import clip_convex
 from app.radiometry import BAND_NUMBERS, parse_band_meta, to_physical
 
 DATA_DIR = Path(os.environ.get("BHOONIDHI_DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
@@ -84,6 +85,21 @@ class Scene:
 
     def ndvi(self, bbox, mode: str = "radiance") -> Clip:
         return self.index(bbox, "ndvi", mode)
+
+
+def available_area(folder: Path) -> list[tuple[float, float]]:
+    """Polygon (lon, lat) of where this scene folder really has data.
+
+    The scene's true image footprint (the four corners in BAND_META.txt: the image is tilted, so it is not a
+    rectangle) intersected with the extent of the rasters on disk. For a full scene the two nearly coincide; for the
+    pre-clipped cache the raster is much smaller, and only the clip can actually be served. Empty if they do not overlap.
+    """
+    scene = Scene(folder)
+    m = scene.meta
+    footprint = [(float(m[f"Image{c}Lon"]), float(m[f"Image{c}Lat"])) for c in ("UL", "UR", "LR", "LL")]
+    b = scene.bounds
+    lons, lats = transform(scene.crs, "EPSG:4326", [b.left, b.right, b.right, b.left], [b.top, b.top, b.bottom, b.bottom])
+    return clip_convex(footprint, list(zip(lons, lats)))
 
 
 def find_scenes(bbox, data_dir: Path = DATA_DIR, min_valid: float = 0.95) -> list[Scene]:

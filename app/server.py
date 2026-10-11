@@ -125,20 +125,25 @@ def api_info():
 
 @flask_app.route("/api/coverage")
 def api_coverage():
-    """Footprints of the scenes this instance has prepared (true image corners, so tilted edges are visible)."""
+    """Where this instance can really answer: for each scene, its true image footprint intersected with the data on disk.
+
+    (The prepared cache holds only a clip of each scene, so the full footprint would promise areas that cannot be served.)
+    """
     from app.radiometry import parse_band_meta
-    from app.scene import DATA_DIR
+    from app.scene import DATA_DIR, available_area
 
     features = []
     for meta_file in sorted(Path(DATA_DIR).glob("*/BAND_META.txt")):
         try:
             m = parse_band_meta(meta_file)
-            corners = [(float(m[f"Image{c}Lon"]), float(m[f"Image{c}Lat"])) for c in ("UL", "UR", "LR", "LL")]
+            ring = available_area(meta_file.parent)
             when = datetime.strptime(m["DateOfPass"], "%d-%b-%Y").date().isoformat()
-        except (KeyError, ValueError):
-            continue  # a folder without usable metadata is simply not listed
+        except Exception:  # a folder without usable metadata or rasters is simply not listed
+            continue
+        if len(ring) < 3:
+            continue
         features.append({"type": "Feature",
-                         "geometry": {"type": "Polygon", "coordinates": [[*corners, corners[0]]]},
+                         "geometry": {"type": "Polygon", "coordinates": [[*ring, ring[0]]]},
                          "properties": {"id": m.get("OTSProductID", meta_file.parent.name), "date": when,
                                         "satellite": m.get("SatID"), "sensor": m.get("Sensor")}})
     features.sort(key=lambda f: f["properties"]["date"], reverse=True)
