@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app  # noqa: E402,F401  (pins PROJ/GDAL data before rasterio is used)
 from app import live_fetch  # noqa: E402
-from app.bhoonidhi_client import (PORTAL_RECORD_FIELDS, BhoonidhiClient, BhoonidhiError,  # noqa: E402
+from app.bhoonidhi_client import (DOWNLOAD_AUTH_STYLES, PORTAL_RECORD_FIELDS, BhoonidhiClient, BhoonidhiError,  # noqa: E402
                                  footprint_contains_bbox, load_env_file)
 
 
@@ -43,6 +43,9 @@ def main() -> int:
     ap.add_argument("--probe-portal-download", action="store_true",
                     help="log in to the portal itself, then ask its own data path (what the unofficial client uses) for the scene; "
                          "reads only the first bytes, downloads nothing")
+    ap.add_argument("--download-auth", choices=DOWNLOAD_AUTH_STYLES, default=None,
+                    help="how to download: 'portal' (works; asks for an emailed one-time code), or an official-API form. "
+                         "Default: $BHOONIDHI_DOWNLOAD_AUTH, else bearer")
     ap.add_argument("--settle", type=float, default=0.0, metavar="SECONDS",
                     help="with --probe-download-auth: wait this long after login and search before asking /download")
     ap.add_argument("--diagnose-download", action="store_true",
@@ -63,7 +66,7 @@ def main() -> int:
         return 2
     bbox = (minx, miny, maxx, maxy)
 
-    client = BhoonidhiClient(user, password, download_auth=os.environ.get("BHOONIDHI_DOWNLOAD_AUTH", "bearer"),
+    client = BhoonidhiClient(user, password, download_auth=args.download_auth or os.environ.get("BHOONIDHI_DOWNLOAD_AUTH", "bearer"),
                               otp_prompt=ask_otp)
     try:
         start, end = (wanted, wanted) if wanted else (None, None)

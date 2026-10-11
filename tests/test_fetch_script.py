@@ -115,3 +115,15 @@ def test_probe_portal_download_without_a_terminal_explains_the_code(run, monkeyp
     code, out, _ = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-portal-download",
                        portal_otp=True)
     assert code == 1 and "one-time code is needed but there is no terminal" in out
+
+
+def test_download_with_the_portal_route_from_the_command_line(run, tmp_path, monkeypatch):
+    import builtins
+
+    monkeypatch.setattr(builtins, "input", lambda prompt="": "123456")
+    code, out, api = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--download-auth", "portal",
+                         portal_otp=True)
+    assert code == 0 and "Done:" in out and "100% of the bbox has data" in out
+    assert (tmp_path / "data" / SCENE / "BAND_META.txt").exists()
+    assert api.count("/download") == 0  # the official API's download was never used
+    assert "portaljwt" not in out and "correct-horse" not in out and "token-" not in out
