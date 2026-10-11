@@ -7,14 +7,15 @@ It comes with an interactive map page that is simply a client of the WPS.
 
 ![The explorer page: a drawn box over central Hyderabad with the NDVI result overlaid](docs/explorer-light.png)
 
-**Try it:** map page `https://triangle-overpass-flirt.ngrok-free.dev/` · WPS endpoint
-`https://triangle-overpass-flirt.ngrok-free.dev/wps`
-([GetCapabilities](https://triangle-overpass-flirt.ngrok-free.dev/wps?service=WPS&request=GetCapabilities)).
-It runs on the author's machine behind an ngrok tunnel, so it is up only while that machine is running and the address
-changes if the tunnel is restarted; see [docs/DEMO.md](docs/DEMO.md). The public instance serves only the scenes
-prepared in advance around Hyderabad (section 5), because logging in to Bhoonidhi through a page is deliberately switched
-off on a public address. Run locally with `BROWSER_LOGIN=1` (section 4), the same page also fetches any other scene on
-demand after you log in to your own Bhoonidhi account.
+**Try it:** map page `https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/` · WPS endpoint
+`https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/wps`
+([GetCapabilities](https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/wps?service=WPS&request=GetCapabilities)).
+It runs on an Azure VM (Docker, Caddy with a Let's Encrypt certificate), always on while the VM is running; deployment steps
+are in [docs/AZURE.md](docs/AZURE.md). The prepared scenes around Hyderabad (section 5) are served directly; for any other
+area the map page offers to fetch a scene after you log in, on the page, to your **own** Bhoonidhi account (section 3 explains
+what that means for your password). A second copy runs from the author's laptop through an ngrok tunnel
+(`https://triangle-overpass-flirt.ngrok-free.dev/`, only while the laptop is on, login switched off there); see
+[docs/DEMO.md](docs/DEMO.md). Everything below can also be run locally (section 4).
 
 **How it relates to Bhoonidhi:** it is an unofficial, external service built on data downloaded from Bhoonidhi, not part
 of Bhoonidhi (only NRSC can add services to its own infrastructure). The pixels are real Bhoonidhi products and the
@@ -271,8 +272,8 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   how). Radiance carries no solar-irradiance correction; since red sunlight is stronger than NIR, NDVI is expected to be
   biased low (the Hyderabad 23 May clip has a median NDVI of about -0.05; 2 Oct is greener, about +0.06 on the mean, as expected after the monsoon, but the sensors differ so compare patterns, not numbers), but I could not quantify the bias without
   the ESUN values. Treat values as relative. The priced BOA surface-reflectance product is the proper alternative.
-- **The public demo address serves only the prepared scenes shown on the map** (browser login is off there; a local
-  instance with `BROWSER_LOGIN=1` can fetch more): four scenes around Hyderabad, each cut to
+- **Prepared scenes are the four shown on the map** (the ngrok copy serves only these, with login off; the Azure instance and
+  a local instance with `BROWSER_LOGIN=1` can fetch more for a visitor who logs in): four scenes around Hyderabad, each cut to
   about 65 x 55 km: 18 and 23 May 2026 (Resourcesat-2), 2 Oct 2026 (Resourcesat-2A) and 9 Oct 2026 (Resourcesat-2). The 18 May and
   9 Oct scenes are on the tilted western track and cover only the west of the city centre, so for the central-Hyderabad
   demo box the choices are 23 May and 2 Oct. Anything else returns a clean "no scene covers this request" exception.
