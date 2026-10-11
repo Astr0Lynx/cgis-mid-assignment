@@ -28,12 +28,20 @@ sudo usermod -aG docker azureuser && exit          # log in again so the group a
 ## 4. Get the code and the prepared scenes
 `cache/` is git-ignored (it is derived from licensed scenes), so it is copied from your laptop, not from GitHub.
 ```bash
-# on the VM
+# Public repository: on the VM
 git clone https://github.com/Astr0Lynx/cgis-mid-assignment.git && cd cgis-mid-assignment
-# on your laptop (repo folder; about 70 MB)
+# on your laptop, in the repo folder (about 70 MB for the cache)
 scp -i path/to/key.pem -r cache azureuser@<host name>:~/cgis-mid-assignment/cache
+
+# Private repository (a VM cannot clone it without a token): send the committed files instead
+git archive --format=tar.gz -o app.tgz HEAD && tar -czf cache.tgz cache
+scp -i path/to/key.pem app.tgz cache.tgz azureuser@<host name>:~/
+ssh -i path/to/key.pem azureuser@<host name> "mkdir cgis-mid-assignment && tar -xzf app.tgz -C cgis-mid-assignment && tar -xzf cache.tgz -C cgis-mid-assignment"
 ```
-(If the repository is private, make it public for grading or copy the folder with `scp -r` instead of cloning.)
+(To update later, send a new `app.tgz` the same way and run the `up -d --build` line again.)
+
+Behind some campus networks the VM is unreachable (SSH, 80 and 443 all time out); try a phone hotspot, and remember that the
+SSH firewall rule then needs to allow your new address.
 
 ## 5. Start it
 ```bash
