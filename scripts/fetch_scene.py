@@ -20,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import app  # noqa: E402,F401  (pins PROJ/GDAL data before rasterio is used)
 from app import live_fetch  # noqa: E402
-from app.bhoonidhi_client import BhoonidhiClient, BhoonidhiError, footprint_contains_bbox, load_env_file  # noqa: E402
+from app.bhoonidhi_client import (PORTAL_RECORD_FIELDS, BhoonidhiClient, BhoonidhiError,  # noqa: E402
+                                 footprint_contains_bbox, load_env_file)
 
 
 def ask_otp() -> str:
@@ -87,8 +88,19 @@ def main() -> int:
             print("Logging in to the portal itself (a separate login from the API's) ...")
             client.portal_login()
             print("Portal login worked (the session token is not shown).")
+            print("Asking the portal's own search where this scene lives ...")
+            record = None
+            try:
+                record = client.find_portal_record(options[0], bbox)
+            except BhoonidhiError as e:
+                print(f"  portal search failed: {e}")
+            if record:
+                print("  portal record (non-secret fields): " + ", ".join(
+                    f"{k}={record.get(k)}" for k in PORTAL_RECORD_FIELDS if k in record))
+            else:
+                print("  the portal search did not return this scene; falling back to the inferred layout")
             print(f"Asking the portal's data path for {options[0].id} (nothing is downloaded):")
-            results = client.probe_portal_download(options[0])
+            results = client.probe_portal_download(options[0], record)
             for r in results:
                 print(f"  {r['path']}\n      status={r['status']}  {r['content_type']}  length={r['content_length']}"
                       f"  location={r['location']}\n      {r['starts_with']}")

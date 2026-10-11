@@ -451,3 +451,57 @@ def test_the_portal_route_logs_in_once_and_reuses_the_session(tmp_path):
     client.probe_portal_download(item())  # a second use of the portal in the same process
     logins = sum(1 for _, p, _ in api.calls if p == "/bhoonidhi/LoginServlet")
     assert logins == 2  # password step + code step, once
+
+
+# ---- the portal's own search: the real data path instead of a guess ----------------------------------------------------
+
+def test_portal_search_sends_the_documented_looking_body():
+    api = FakeBhoonidhi(archives={SCENE: b"x"})
+    client = portal_client(api)
+    records = client.portal_search((77.49, 17.49, 77.51, 17.51), date(2026, 5, 23), ["ResourceSat-2_LISS3_L2"])
+    body = api.portal_search_bodies[0]
+    assert body["sdate"] == body["edate"] == "MAY%2F23%2F2026" and body["selSats"] == "ResourceSat-2_LISS3_L2"
+    assert (body["query"], body["queryType"], body["filters"]) == ("area", "polygon", "%7B%7D")
+    assert (body["tllat"], body["tllon"], body["brlat"], body["brlon"]) == ("17.51", "77.49", "17.49", "77.51")
+    assert records[0]["ID"] == SCENE
+
+
+def test_find_portal_record_tries_the_archives_name_when_the_plain_one_is_unknown():
+    api = FakeBhoonidhi(archives={SCENE: b"x"})
+    api.portal_selections = {"ResourceSat-2_LISS3_L2-Archives"}  # only the suffixed name exists on this portal
+    record = portal_client(api).find_portal_record(item(), BBOX)
+    assert record["ID"] == SCENE and len(api.portal_search_bodies) == 2
+
+
+def test_find_portal_record_returns_none_for_a_scene_the_portal_does_not_list():
+    api = FakeBhoonidhi(archives={})
+    assert portal_client(api).find_portal_record(item(), BBOX) is None
+
+
+def test_address_from_a_record_follows_the_unofficial_clients_rule():
+    client = portal_client(FakeBhoonidhi())
+    record = {"ID": SCENE, "FILENAME": SCENE, "SATELLITE": "RS2", "SENSOR": "LIS3",
+              "DIRPATH": "/data/RS2/LIS3/2026/05/23/" + SCENE}
+    assert client.portal_candidates_from(record) == [
+        f"https://bhoonidhi.nrsc.gov.in/bhoonidhi/data/RS2/3/2026/05/{SCENE}.zip"]  # LIS3 -> 3; year/month from DIRPATH
+    assert client.portal_candidates_from({"ID": SCENE}) == []  # not enough information: no guessing
+
+
+def test_download_uses_the_portals_real_layout_not_the_inferred_one(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_sat = "R2A"  # differs from the inferred "RS2": the inferred address would be a 404
+    api.portal_paths = {f"/bhoonidhi/data/R2A/3/2026/05/{SCENE}.zip"}
+    client = portal_client(api)
+    folder = client.download_scene(item(), tmp_path / "data", bbox=BBOX)
+    assert (folder / "BAND_META.txt").exists()
+    # the same download without a search area has nothing to ask the portal and falls back to the inferred layout
+    with pytest.raises(BhoonidhiError, match="portal has no file at /bhoonidhi/data/RS2/3/2026/05/"):
+        portal_client(api).download_scene(item("R2318MAY2026078246009900060PSANSTUC00GTDF"), tmp_path / "d2")
+
+
+def test_download_falls_back_to_the_inferred_layout_when_the_portal_does_not_list_the_scene(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_selections = set()  # the search finds nothing
+    client = portal_client(api)
+    folder = client.download_scene(item(), tmp_path / "data", bbox=BBOX)
+    assert (folder / "BAND_META.txt").exists()

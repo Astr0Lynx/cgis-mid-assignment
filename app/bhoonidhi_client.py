@@ -39,6 +39,12 @@ API_AUTH_STYLES = ("bearer", "query", "token-header")  # ways to call the offici
 DOWNLOAD_AUTH_STYLES = API_AUTH_STYLES + ("portal",)
 PORTAL_URL = "https://bhoonidhi.nrsc.gov.in"
 PORTAL_SATELLITE = {"ResourceSat-2_LISS3_L2": "RS2", "ResourceSat-2A_LISS3_L2": "R2A"}  # the portal's SATELLITE codes
+PORTAL_SEARCH_PATH = "/bhoonidhi/ProductSearch"  # the portal's own search; it returns each scene's real data path
+# (satellite, sensor) -> the short sensor code in the portal's data path, from the unofficial client; other sensors
+# are used as they are
+PORTAL_SENSOR_CODES = {("R2A", "LIS3"): "3", ("RS2", "LIS3"): "3", ("R2A", "LIS4"): "F", ("RS2", "LIS4"): "F",
+                       ("R2A", "AWIF"): "W", ("RS2", "AWIF"): "W"}
+PORTAL_RECORD_FIELDS = ("ID", "SATELLITE", "SENSOR", "SELECTION", "DIRPATH", "FILENAME", "PRICED", "TABLETYPE")
 PORTAL_LOGIN_PATH = "/bhoonidhi/LoginServlet"  # the portal's own login, separate from the official API login
 PORTAL_LISS3_SENSOR = "3"  # the portal's short code for the LISS-III sensor in its data path
 AUTH_ERRORS = {
@@ -110,6 +116,7 @@ class BhoonidhiClient:
         self.portal_url = portal_url.rstrip("/")
         self.otp_prompt = otp_prompt  # callable returning the emailed 6-digit code; None in a non-interactive service
         self._portal_jwt = None
+        self._tried_portal_paths = []
         if not user or not password:
             raise BhoonidhiError("Bhoonidhi credentials are not set (BHOONIDHI_USER / BHOONIDHI_PASSWORD)")
         self._user, self._password = user, password
@@ -293,13 +300,67 @@ class BhoonidhiClient:
     def _portal_token(self) -> str:
         return self._portal_jwt or self.portal_login()
 
-    def portal_candidates(self, item: Item) -> list[str]:
+    def portal_search(self, bbox, day: date, selections) -> list[dict]:
+        """The portal's own search for scenes on one day in a (minx, miny, maxx, maxy) box; first page of records.
+
+        Request format from the unofficial client (not documented by NRSC): a JSON POST whose values are
+        percent-encoded, with the area given as top-left / bottom-right corners. `selections` are the portal's
+        display names for the products, for example "ResourceSat-2_LISS3_L2".
+        """
+        minx, miny, maxx, maxy = bbox
+        stamp = f"{day.strftime('%b').upper()}%2F{day.day:02d}%2F{day.year}"
+        payload = {
+            "userId": "T", "prod": "Standard",
+            "selSats": "%2C".join(quote("".join(name.split()), safe="") for name in selections),
+            "offset": "0", "sdate": stamp, "edate": stamp, "query": "area", "isMX": "No", "queryType": "polygon",
+            "tllat": str(maxy), "tllon": str(minx), "brlat": str(miny), "brlon": str(maxx), "filters": "%7B%7D",
+        }
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        try:
+            r = self.session.request("POST", f"{self.portal_url}{PORTAL_SEARCH_PATH}", json=payload, headers=headers,
+                                     timeout=(10, 60))
+            if r.status_code in (401, 403) and self._portal_jwt:  # some deployments want the session token here
+                r = self.session.request("POST", f"{self.portal_url}{PORTAL_SEARCH_PATH}", json=payload,
+                                         headers={**headers, "token": self._portal_jwt}, timeout=(10, 60))
+        except requests.RequestException as e:
+            raise BhoonidhiError(f"could not reach the Bhoonidhi portal search: {type(e).__name__}") from None
+        if r.status_code != 200:
+            raise BhoonidhiError(f"Bhoonidhi portal search failed: HTTP {r.status_code} {self._describe(r)}")
+        try:
+            return list(r.json().get("Results") or [])
+        except Exception:
+            raise BhoonidhiError("Bhoonidhi portal search: the reply was not the expected JSON") from None
+
+    def find_portal_record(self, item: Item, bbox) -> dict | None:
+        """The portal's record for this scene (its real satellite, sensor, directory and file name), or None."""
+        if not item.date:
+            return None
+        for name in (item.collection, f"{item.collection}-Archives"):  # the portal's display name may carry a suffix
+            for record in self.portal_search(bbox, item.date, [name]):
+                if record.get("ID") == item.id or record.get("FILENAME") == item.id:
+                    return record
+        return None
+
+    def portal_candidates_from(self, record: dict) -> list[str]:
+        """The download address the unofficial client builds from a portal record (no guessing)."""
+        satellite, sensor = str(record.get("SATELLITE") or ""), str(record.get("SENSOR") or "")
+        name = str(record.get("FILENAME") or record.get("ID") or "")
+        if not (satellite and sensor and name):
+            return []
+        parts = str(record.get("DIRPATH") or "").strip("/").split("/")[-4:][:2]  # year and month, no day folder
+        year, month = (parts + ["", ""])[:2]
+        code = PORTAL_SENSOR_CODES.get((satellite, sensor), sensor)
+        return [f"{self.portal_url}/bhoonidhi/data/{satellite}/{code}/{year}/{month}/{name}.zip"]
+
+    def portal_candidates(self, item: Item, record: dict | None = None) -> list[str]:
         """Candidate portal download addresses (without the token) for a scene.
 
         Layout from the unofficial client: <portal>/bhoonidhi/data/<satellite>/<sensor>/<year>/<month>/<file>.zip, where
         the year and month come from the product's directory on the portal. That is the acquisition month in the
         examples I know of, but it might be the month the product was generated, so the previous month is also tried.
         """
+        if record:
+            return self.portal_candidates_from(record)
         satellite = PORTAL_SATELLITE.get(item.collection)
         if not satellite or not item.date:
             return []
@@ -315,11 +376,18 @@ class BhoonidhiClient:
         except requests.RequestException as e:
             raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
 
-    def _portal_download(self, item: Item):
-        """Open the download on the portal: the first candidate address that answers 200, else the last answer."""
+    def _portal_download(self, item: Item, bbox=None):
+        """Open the download on the portal: the first candidate address that answers 200, else the last answer.
+
+        With a search area, the portal is asked for the scene's real data path first; without one, or if the portal
+        does not know the scene, the inferred layout is used.
+        """
         last = None
-        for url in self.portal_candidates(item):
+        self._tried_portal_paths = []
+        record = self.find_portal_record(item, bbox) if bbox else None
+        for url in self.portal_candidates(item, record):
             r = self._portal_get(url, item, stream=True, timeout=(15, 300))
+            self._tried_portal_paths.append(urlsplit(url).path)
             if r.status_code == 200:
                 return r
             last = r
@@ -327,14 +395,14 @@ class BhoonidhiClient:
             raise BhoonidhiError(f"no portal download address is known for collection {item.collection!r}")
         return last
 
-    def probe_portal_download(self, item: Item) -> list[dict]:
+    def probe_portal_download(self, item: Item, record: dict | None = None) -> list[dict]:
         """Ask the portal's data path for the scene, once per candidate address, reading only the first bytes.
 
         Uses the portal's own session token (see portal_login). Stops at the first HTTP 200. Reports the address path (never
         the token) and what came back.
         """
         results = []
-        for url in self.portal_candidates(item):
+        for url in self.portal_candidates(item, record):
             r = self._portal_get(url, item, stream=True, timeout=(15, 60), allow_redirects=False)
             first = b""
             try:
@@ -423,7 +491,7 @@ class BhoonidhiClient:
 
     # ---- download ------------------------------------------------------------------------------------------
 
-    def download_scene(self, item: Item, data_dir: Path, min_free_gb: float = 2.0, progress=None) -> Path:
+    def download_scene(self, item: Item, data_dir: Path, min_free_gb: float = 2.0, progress=None, bbox=None) -> Path:
         """Download one scene and unpack only what the service needs into data_dir/<item.id>/. Returns that folder."""
         data_dir = Path(data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -448,7 +516,7 @@ class BhoonidhiClient:
         part = data_dir / f"{item.id}.zip.part"
         staging = data_dir / f"{item.id}.staging"
         try:
-            self._fetch_zip(item, part, progress)
+            self._fetch_zip(item, part, progress, bbox)
             self._unpack(part, staging)
             if final.exists():
                 shutil.rmtree(final)
@@ -459,7 +527,7 @@ class BhoonidhiClient:
             shutil.rmtree(staging, ignore_errors=True)
             shutil.rmtree(lock, ignore_errors=True)
 
-    def _fetch_zip(self, item: Item, dest: Path, progress=None) -> None:
+    def _fetch_zip(self, item: Item, dest: Path, progress=None, bbox=None) -> None:
         params = {"id": item.id, "collection": item.collection}
         for attempt, wait in enumerate((0, *self.retry_waits)):
             if wait:
@@ -467,11 +535,14 @@ class BhoonidhiClient:
             if self.download_auth == "bearer":
                 r = self._call("GET", "/download", params=params, stream=True, timeout=(15, 300))
             elif self.download_auth == "portal":
-                r = self._portal_download(item)
+                r = self._portal_download(item, bbox)
             else:
                 r = self._download_request(params, self.download_auth, stream=True, timeout=(15, 300))
             if r.status_code in RETRY_STATUSES and attempt < len(self.retry_waits):
                 continue
+            if r.status_code == 404 and self.download_auth == "portal":
+                raise BhoonidhiError(f"the Bhoonidhi portal has no file at {', '.join(self._tried_portal_paths)} "
+                                     "(the directory layout there may differ from the one assumed)")
             if r.status_code == 404:
                 raise BhoonidhiError("Bhoonidhi says this product is not available on online storage")
             if r.status_code != 200:

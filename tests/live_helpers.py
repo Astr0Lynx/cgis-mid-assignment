@@ -99,6 +99,9 @@ class FakeBhoonidhi:
         self.download_response = None  # optional callable(kwargs) -> FakeResponse, overrides /download entirely
         self.portal_accepts = True  # does the portal data path accept a valid portal token?
         self.portal_tokens = set()
+        self.portal_sat, self.portal_sensor = "RS2", "LIS3"  # the portal's own codes for the scenes it lists
+        self.portal_selections = {"ResourceSat-2_LISS3_L2", "ResourceSat-2_LISS3_L2-Archives"}  # names it recognises
+        self.portal_search_bodies = []
         self.portal_otp = False  # does the portal login demand an emailed one-time code?
         self.portal_otp_code = "123456"
         self.portal_paths = None  # optional set of exact paths that exist on the portal (others give 404)
@@ -111,6 +114,8 @@ class FakeBhoonidhi:
         self.calls.append((method, path, kw))
         if path == "/auth/token":
             return self._auth(kw["json"])
+        if path == "/bhoonidhi/ProductSearch":  # the portal's own search (request format from the unofficial client)
+            return self._portal_search(kw["json"])
         if path == "/bhoonidhi/LoginServlet":  # the portal's own login (separate from the official API's)
             return self._portal_login(json.loads(kw["data"]))
         if path.startswith("/bhoonidhi/data/"):  # the portal's own data path (inferred from the unofficial client)
@@ -149,6 +154,24 @@ class FakeBhoonidhi:
             return FakeResponse(200, chunks=[data[i:i + 4096] for i in range(0, len(data), 4096)],
                                 headers={"Content-Length": str(len(data))})
         return FakeResponse(404)
+
+    def _portal_search(self, body):
+        from urllib.parse import unquote
+
+        from app.bhoonidhi_client import date_from_id
+
+        self.portal_search_bodies.append(body)
+        wanted = {unquote(n) for n in body["selSats"].split("%2C")}
+        if not wanted & self.portal_selections:
+            return FakeResponse(200, {"Results": []})
+        records = []
+        for scene_id in self.archives:
+            d = date_from_id(scene_id)
+            records.append({"ID": scene_id, "SATELLITE": self.portal_sat, "SENSOR": self.portal_sensor,
+                            "SELECTION": sorted(self.portal_selections)[0], "FILENAME": scene_id,
+                            "DIRPATH": f"/data/{self.portal_sat}/{self.portal_sensor}/{d.year}/{d.month:02d}/{d.day:02d}/{scene_id}",
+                            "PRICED": "OpenData_LISS3", "TABLETYPE": "PMETA", "srt": "x"})
+        return FakeResponse(200, {"Results": records})
 
     def _portal_login(self, body):
         from urllib.parse import unquote

@@ -89,6 +89,7 @@ def test_probe_portal_download_prints_paths_and_the_setting_to_use(run, tmp_path
     code, out, api = run("--bbox", "17.49,77.49,17.51,77.51", "--date", "2026-05-23", "--probe-portal-download")
     assert code == 0 and f"/bhoonidhi/data/RS2/3/2026/05/{SCENE}.zip" in out and "status=200" in out
     assert "Portal login worked" in out and "portaljwt" not in out
+    assert "portal record (non-secret fields):" in out and "DIRPATH=" in out and "FILENAME=" in out
     assert "BHOONIDHI_DOWNLOAD_AUTH=portal" in out
     assert not (tmp_path / "data").exists() and "token-" not in out and "correct-horse" not in out
 

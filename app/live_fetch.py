@@ -66,7 +66,8 @@ def ensure_scene(bbox, wanted: date | None, data_dir: Path, progress=None, clien
 
     for n, item in enumerate(options[:MAX_DOWNLOADS], start=1):
         note(f"Downloading {item.id} ({n} of {min(len(options), MAX_DOWNLOADS)}); this can take minutes", 20)
-        folder = client.download_scene(item, data_dir, progress=lambda f: note("Downloading scene", 20 + int(50 * f)))
+        folder = client.download_scene(item, data_dir, bbox=bbox,
+                                      progress=lambda f: note("Downloading scene", 20 + int(50 * f)))
         scene = Scene(folder)
         note("Checking coverage", 75)
         if scene.valid_fraction(bbox) >= min_valid:
