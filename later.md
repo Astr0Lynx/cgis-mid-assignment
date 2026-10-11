@@ -50,6 +50,15 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
   refused 9 Oct 2026). The official API `/download` was refused for every token form ("Invalid session detected").
 - DONE: interactive map page (draw an area, pick date + index, overlay, legend, WPS request panel, light/dark), colour
   `preview` output, `/api/info`, `/api/coverage`.
+- DONE (2026-10-11): log in to Bhoonidhi from the map page (user id, password, then the emailed code, inside our page) and
+  fetch a scene on demand; the pending Run continues automatically, logging in by choice starts nothing. Enabled with
+  `BROWSER_LOGIN=1`, off on the public ngrok address. Fetched scenes are shared and expire (`FETCH_TTL_HOURS`,
+  `FETCH_MAX_GB`). Tested with a fake Bhoonidhi in unit tests and in real Chrome (`tests/e2e`). `/api/coverage` outlines
+  now show only the area actually on disk. Pre-download footprint check via the public `.meta` file.
+- NOT VERIFIED with the real Bhoonidhi: the page-based login + fetch (the script's equivalent is verified), and the `.meta`
+  URL for the pre-check (run `python scripts/fetch_scene.py --bbox ... --dry-run --probe-portal-download` and read the
+  "portal metadata file" line). If the `.meta` is absent the check silently does nothing.
+- TODO when a VM exists: serve over HTTPS (the password is posted to the server) and only then set `BROWSER_LOGIN=1`.
 - NOT DONE: reusing the portal session so the service itself could fetch scenes during a request (the emailed code is
   needed at every login; the unofficial client's VALIDATE_SESSION call suggests a session can be refreshed, untested).
 - NOT DONE: TOA reflectance (blocked on a cited ESUN table), SAVI (needs reflectance), always-on hosting (an Azure VM was

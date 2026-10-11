@@ -56,13 +56,18 @@ app/
                     decides which scenes truly cover the box; writes the result as a COG.
   processes/ndvi.py The WPS processes `ndvi` and `spectral-index` (one shared class): inputs/outputs, checks, handler.
   pywps_compat.py   Fixes for places where PyWPS 4.8 breaks the OGC standard (see section 8).
-  server.py         The web app: /wps (the service), /outputs/ (result files), / (the map page), /api/info, /api/coverage.
+  server.py         The web app: /wps (the service), /outputs/ (result files), / (the map page), /api/info, /api/coverage
+                    (outlines of the area actually on disk), plus the login and fetch routes below.
+  webauth.py        Browser login (only if BROWSER_LOGIN=1): /api/login, /api/otp, /api/session, /api/logout. Keeps each
+                    visitor's logged-in Bhoonidhi client in memory behind an HttpOnly cookie; never stores the password.
+  fetchjobs.py      /api/fetch: runs the scene download in a background thread for a logged-in visitor; the page polls it.
   preview.py        Colour PNG preview of a result (reprojected to lat/lon, percentile stretch), built with numpy + zlib.
   static/           The interactive map page: index.html, app.js, style.css and a vendored copy of Leaflet.
   cleanup.py        Deletes stored results older than OUTPUT_TTL_HOURS so the disk cannot fill up.
   bhoonidhi_client.py  Talks to Bhoonidhi: API login + STAC search, the portal's own login (emailed one-time code),
                     the portal's search and download route, safe unpacking. Verified on the real service (README section 5).
-  live_fetch.py     Request-time fetching glue (off by default; cannot answer the emailed code unattended).
+  live_fetch.py     Fetching glue used by the page, the script and (off by default) request-time mode. Before a download
+                    it reads the scene's small public .meta file so a tilted scene that misses the area is skipped.
 scripts/
   build_cache.py    data/ -> cache/ (cuts the scenes down to Hyderabad).
   fetch_scene.py    Fetches a scene from Bhoonidhi into data/ (--dry-run only searches). Needs your own account.
@@ -141,6 +146,8 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 | `BHOONIDHI_DATA_DIR` | `/srv/data` in Docker | folder holding the scene folders |
 | `BHOONIDHI_LIVE`, `BHOONIDHI_USER`, `BHOONIDHI_PASSWORD` | unset | live mode (all three needed). Your own account; **local use only** |
 | `BHOONIDHI_LOOKBACK_DAYS`, `BHOONIDHI_MAX_DOWNLOADS` | 60, 2 | live mode: search window when no date is given; downloads per request |
+| `BROWSER_LOGIN` | unset | `1` lets visitors log in to Bhoonidhi from the page and fetch scenes. **Not on a public tunnel**; see README section 3 |
+| `FETCH_TTL_HOURS`, `FETCH_MAX_GB` | 6, 3 | fetched scenes (`data/_fetched`) are shared, then deleted after this age or above this total size |
 | `BHOONIDHI_DOWNLOAD_AUTH` | `bearer` | how a scene is downloaded: `portal` (works: the portal's own route; asks for an emailed code) or an official-API form `bearer`/`query`/`token-header` (all refused by the server) |
 
 ## 7. Data modes
@@ -154,8 +161,12 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
   It logs in to the API and searches the STAC catalogue, logs in to the portal (Bhoonidhi emails a 6-digit code, which the
   script asks you to type), asks the portal's search where the scene lives, downloads about 140 MB, unpacks only the four
   bands and `BAND_META.txt`, and checks that real pixels cover your area (it refuses scenes whose tilted image misses it).
-  Then `build_cache.py` and a rebuilt image serve it. The service does not do this during a request: nobody is there to type
-  the emailed code. Credentials must come from the environment or a git-ignored `.env`, never from the image.
+  Then `build_cache.py` and a rebuilt image serve it. Credentials must come from the environment or a git-ignored `.env`,
+  never from the image.
+- **Getting scenes from the page (local, `BROWSER_LOGIN=1`):** the same steps, driven by the visitor. Press Run on an area
+  no scene covers; a dialog takes the user id and password, then the emailed code; the pending Run continues by itself.
+  The scene lands in `data/_fetched`, is visible to everyone (`/api/coverage` re-reads the disk), and expires after
+  `FETCH_TTL_HOURS`. To try it with no account: `python scripts/dev_fake_bhoonidhi.py`. Automated browser test: `tests/e2e/`.
 
 ## 8. Problems found while building (worth knowing)
 

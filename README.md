@@ -12,12 +12,14 @@ It comes with an interactive map page that is simply a client of the WPS.
 ([GetCapabilities](https://triangle-overpass-flirt.ngrok-free.dev/wps?service=WPS&request=GetCapabilities)).
 It runs on the author's machine behind an ngrok tunnel, so it is up only while that machine is running and the address
 changes if the tunnel is restarted; see [docs/DEMO.md](docs/DEMO.md). The public instance serves only the scenes
-prepared in advance around Hyderabad (section 5). Everything below can also be run locally (section 4).
+prepared in advance around Hyderabad (section 5), because logging in to Bhoonidhi through a page is deliberately switched
+off on a public address. Run locally with `BROWSER_LOGIN=1` (section 4), the same page also fetches any other scene on
+demand after you log in to your own Bhoonidhi account.
 
 **How it relates to Bhoonidhi:** it is an unofficial, external service built on data downloaded from Bhoonidhi, not part
 of Bhoonidhi (only NRSC can add services to its own infrastructure). The pixels are real Bhoonidhi products and the
-processing is real; the public instance serves a prepared subset, and a command-line step (section 4) can fetch further
-scenes from Bhoonidhi.
+processing is real; the public instance serves a prepared subset, and a local instance can fetch further scenes from
+Bhoonidhi, from the map page or the command line (section 4).
 
 ## 1. The gap
 
@@ -74,8 +76,15 @@ Endpoint (local): `http://localhost:5000/wps`
 `/` serves a small web page (Leaflet, vendored, no CDN): draw an area on the map (the prepared scenes are outlined),
 pick a scene date and an index, press **Run WPS process**, and the result is overlaid with a legend, statistics, download
 links and the exact WPS `Execute` request that was sent. Light and dark modes are supported. The page computes nothing
-itself: every result comes from an ordinary WPS request, so any WPS client can do the same. Two helper endpoints feed it:
-`/api/info` (indices and limits) and `/api/coverage` (footprints of the prepared scenes, from their true image corners).
+itself: every result comes from an ordinary WPS request, so any WPS client can do the same. Helper endpoints feed it:
+`/api/info` (indices and limits) and `/api/coverage` (outlines of the data actually available: the footprint intersected with
+the pixels on disk, so the outline never claims more than a request can use).
+
+**Fetching a scene from the page** (only where the instance runs with `BROWSER_LOGIN=1`). Draw an area no available scene
+covers, and the date list offers "Newest scene on Bhoonidhi". Press **Run** and, if you are not logged in, a dialog asks
+for your Bhoonidhi user id and password, then for the 6-digit code Bhoonidhi emails you; after that the pending Run
+continues by itself (a progress bar shows searching, checking, downloading, unpacking) and the result appears. If you log
+in by choice, with no Run pending, nothing is started. Details and security notes are in section 3.
 
 ### Processes
 | Identifier | What it does |
@@ -190,6 +199,18 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
   covering Hyderabad had 0% valid pixels in the city centre and was correctly refused. At most two downloads are made
   per request, logins and searches respect the documented rate limits, retries wait, and secrets are scrubbed from every
   message.
+- **Logging in and fetching from the page** (`app/webauth.py`, `app/fetchjobs.py`; off unless `BROWSER_LOGIN=1`).
+  The password is posted once to `/api/login`, used only to log in to Bhoonidhi, and not stored or logged (a password
+  field is cleared in the page as soon as it is sent); the emailed code goes to `/api/otp`. The server keeps the logged-in
+  Bhoonidhi client in memory against a random session id in an `HttpOnly`, `SameSite=Strict` cookie (30 minutes idle,
+  2 hours at most), and state-changing calls need a custom header (CSRF). Logins and wrong codes are rate-limited, a
+  session runs one fetch at a time and the server at most two. Fetched scenes go to `data/_fetched`, are shared with
+  later visitors, and are deleted after `FETCH_TTL_HOURS` (default 6) or when `_fetched` exceeds `FETCH_MAX_GB` (default 3).
+  **Honest caveats:** the service host sees your Bhoonidhi password while logging you in, so use this only on an instance
+  you trust and reach over HTTPS; a tunnel such as ngrok can also read the traffic, which is why the public demo address
+  has it switched off. Before a ~140 MB download the open-data scene's small `.meta` file is read to check its true image
+  footprint, so scenes that only the bounding rectangle claims to cover are skipped (if the file cannot be read, the
+  scene is kept and the pixel check after download decides).
 - **Strict MIME type** `image/tiff; subtype=geotiff` on the output, and `/outputs/` is served statically so async
   status documents and results are reachable.
 - **Bounded cost:** requests above 16 Mpixel (~96 x 96 km at 24 m, `MAX_PIXELS`) are rejected.
@@ -212,6 +233,15 @@ docker run -p 5000:5000 bhoonidhi-wps                  # public-style, cache onl
 #   docker run -p 5000:5000 -e PUBLIC_BASE_URL=https://<your-tunnel> bhoonidhi-wps
 ```
 ### Fetching more scenes from Bhoonidhi (needs your own Bhoonidhi account)
+**From the map page** (no `.env` file needed; you type your credentials into the page):
+```bash
+BROWSER_LOGIN=1 python -m app.server        # then open http://localhost:5000/   (PowerShell: $env:BROWSER_LOGIN="1")
+```
+Or without a Bhoonidhi account, to try the whole flow against a made-up archive: `python scripts/dev_fake_bhoonidhi.py`
+(password `correct-horse`, code `123456`, draw a box around 80.6 E 16.5 N). The browser flow is also tested end to end in a
+real Chrome: `tests/e2e/` (see its README).
+
+**From the command line:**
 ```bash
 cp .env.example .env        # fill in BHOONIDHI_USER and BHOONIDHI_PASSWORD; .env is git-ignored, never share it
 python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --dry-run                      # log in + search, downloads nothing
@@ -219,9 +249,10 @@ python scripts/fetch_scene.py --bbox 17.35,78.40,17.45,78.55 --date 2026-10-02 -
 #   -> asks for the 6-digit code Bhoonidhi emails you, downloads ~140 MB into data/, checks real pixel coverage
 python scripts/build_cache.py && docker build -t bhoonidhi-wps .                           # serve the new scene
 ```
-(`--bbox` is `miny,minx,maxy,maxx`.) The service itself does not fetch scenes during a request: the portal login needs a
-fresh emailed code, and a service cannot type one, so it fails with a clear message instead (section 5). Never put
-credentials in the image or the repository, and never enable `BHOONIDHI_LIVE` on a publicly exposed instance.
+(`--bbox` is `miny,minx,maxy,maxx`.) A WPS `Execute` request on its own never logs in: the portal login needs a fresh
+emailed code, which only a person can supply. That is why fetching is a separate step (the page's login dialog, or the
+script) and the WPS then serves what is on disk. Never put credentials in the image or the repository, and never enable
+`BROWSER_LOGIN` or `BHOONIDHI_LIVE` on a publicly exposed instance without HTTPS you control.
 
 A step-by-step live demo script: **[docs/DEMO.md](docs/DEMO.md)**.
 
@@ -238,21 +269,24 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   how). Radiance carries no solar-irradiance correction; since red sunlight is stronger than NIR, NDVI is expected to be
   biased low (the Hyderabad 23 May clip has a median NDVI of about -0.05; 2 Oct is greener, about +0.06 on the mean, as expected after the monsoon, but the sensors differ so compare patterns, not numbers), but I could not quantify the bias without
   the ESUN values. Treat values as relative. The priced BOA surface-reflectance product is the proper alternative.
-- **Public instance serves only the prepared scenes shown on the map:** four scenes around Hyderabad, each cut to
+- **The public demo address serves only the prepared scenes shown on the map** (browser login is off there; a local
+  instance with `BROWSER_LOGIN=1` can fetch more): four scenes around Hyderabad, each cut to
   about 65 x 55 km: 18 and 23 May 2026 (Resourcesat-2), 2 Oct 2026 (Resourcesat-2A) and 9 Oct 2026 (Resourcesat-2). The 18 May and
   9 Oct scenes are on the tilted western track and cover only the west of the city centre, so for the central-Hyderabad
   demo box the choices are 23 May and 2 Oct. Anything else returns a clean "no scene covers this request" exception.
 - **Result files expire.** Stored results (the status document and `ndvi.tif` for async or reference responses) are
   deleted after `OUTPUT_TTL_HOURS` (default 24) so a long-running public instance does not fill its disk; request again
   to get a fresh link.
-- **Fetching from Bhoonidhi is a command-line step, not something the service does unattended.** Verified against the
-  real Bhoonidhi on 2026-10-11 by the account owner: API login and STAC search; the portal login with its emailed
-  one-time code; the portal's own search; a 141 MB download and unpack; and the coverage check (it accepted the 2 Oct
-  Resourcesat-2A scene at 100% and refused the 9 Oct scene). The service's own request-time mode calls the same code but
-  has nobody to type the emailed code, so it fails with a clear message; saving and reusing the portal session would fix
-  that and is not implemented. The portal route uses endpoints NRSC does not document, learnt from a third-party client,
-  so it may change. The documented official `/download` was refused ("Invalid session detected") for every way of sending the
-  token; the cause is unknown (possibly an account permission). The public instance never has credentials.
+- **Fetching from Bhoonidhi needs a person with an account.** Verified against the real Bhoonidhi on 2026-10-11 by the
+  account owner, through the command-line script: API login and STAC search; the portal login with its emailed one-time
+  code; the portal's own search; a 141 MB download and unpack; and the coverage check (it accepted the 2 Oct
+  Resourcesat-2A scene at 100% and refused the 9 Oct scene). The browser login-and-fetch flow was tested end to end in
+  real Chrome against a **fake** Bhoonidhi (`scripts/dev_fake_bhoonidhi.py`, 19 checks) and with the real Bhoonidhi
+  only up to what the script covers; whether the page flow works with a real account's emailed code, and whether the
+  `.meta` pre-check URL exists for real scenes, is **not yet confirmed**. The portal route uses endpoints NRSC does not
+  document, learnt from a third-party client, so it may change. The documented official `/download` was refused
+  ("Invalid session detected") for every way of sending the token; the cause is unknown (possibly an account
+  permission). The public instance never has credentials and does not log anyone in.
 - No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
   time-series; scenes lie in different UTM zones (43N/44N), so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example

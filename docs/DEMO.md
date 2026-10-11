@@ -77,11 +77,22 @@ OWSLib discovers, runs and polls the process with no code written for our servic
 type (capabilities, describe, execute, errors, async status) against the official OGC XML schemas; say that PyWPS 4.8
 produced schema-invalid XML in several places and we corrected them (README section 3).
 
-## 4. How data gets in (1 minute, no commands needed)
-"The public instance serves scenes prepared in advance. I fetched them from Bhoonidhi with a script that logs in to
-Bhoonidhi, searches its STAC catalogue, and downloads the scene. The documented API download refused our token, so the
-script uses the portal's own download route (which emails a one-time code at login). It also checks the pixels: Bhoonidhi
-listed one scene as covering Hyderabad, but its image is tilted and had no data there, and the script refused it."
+## 4. How data gets in (2 minutes)
+"The public address serves scenes prepared in advance; logging in to Bhoonidhi through a page is deliberately off on a
+public tunnel. I fetched those scenes from Bhoonidhi with a script that logs in, searches its STAC catalogue, and
+downloads the scene. The documented API download refused our token, so it uses the portal's own download route (which
+emails a one-time code at login). It also checks the pixels: Bhoonidhi listed one scene as covering Hyderabad, but its
+image is tilted and had no data there, and it was refused."
+
+**Live fetch from the page (local instance only, the one with login switched on).** Start it beforehand in its own
+terminal: `BROWSER_LOGIN=1 python -m app.server` (PowerShell: `$env:BROWSER_LOGIN="1"; python -m app.server`) and open
+`http://localhost:5000/`. Draw a box outside the outlined scenes (for example over Vijayawada or Warangal, inside a
+real Bhoonidhi scene), leave the date on "Newest scene on Bhoonidhi", press **Run**. The dialog asks for your Bhoonidhi
+user id and password, then for the code Bhoonidhi emails you; type it in the page and the run continues by itself with a
+progress bar (about 140 MB). Say: "Nothing was typed anywhere but the page and my mailbox." Do this **once**, rehearsed,
+with a spare minute for the download; if the network is slow, show the same flow with the made-up archive instead:
+`python scripts/dev_fake_bhoonidhi.py` (password `correct-horse`, code `123456`, box around 80.6 E 16.5 N), and say that
+it is a stand-in. Logging in by choice (the account button) does not start anything.
 
 Optional live proof, local terminal only, once or twice at most (login is limited to 20 per hour):
 ```
@@ -99,7 +110,9 @@ EPSG:32643/32644; style it as singleband pseudocolor. Zoom to Hussain Sagar (17.
 - Indices use at-sensor radiance, not reflectance: absolute values are biased and only contrast is meaningful.
   Reflectance (`radiometry=toa`) is built but disabled until a cited solar-irradiance table is available.
 - The public instance serves four prepared scenes around Hyderabad (18 and 23 May, 2 and 9 Oct 2026); it has no Bhoonidhi
-  credentials and never fetches anything itself. Fetching from Bhoonidhi is a command-line step (it needs the emailed code).
+  credentials and never logs anyone in. Fetching needs a person with a Bhoonidhi account (the emailed code), through the
+  page on a local instance or the script. The browser flow has been tested against a fake Bhoonidhi; say whether you have
+  tried it with your real account before the demo.
 - It is an unofficial service built on data from Bhoonidhi, not part of Bhoonidhi.
 - Four indices (NDVI, NDWI, MNDWI, NDBI); no SAVI/EVI, no cloud masking, one scene per answer.
 
