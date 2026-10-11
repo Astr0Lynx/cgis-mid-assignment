@@ -6,6 +6,14 @@ import pytest
 from app.scene import DATA_DIR
 
 NS = {"wps": "http://www.opengis.net/wps/1.0.0", "ows": "http://www.opengis.net/ows/1.1"}
+def newest_hyderabad_date():
+    """The date the service picks by default for the demo box: the newest prepared scene that covers it."""
+    from app.scene import find_scenes
+
+    scenes = find_scenes((78.40, 17.35, 78.55, 17.45))
+    return scenes[0].date.date().isoformat() if scenes else None
+
+
 needs_data = pytest.mark.skipif(not list(DATA_DIR.glob("*/BAND_META.txt")), reason="no scenes in data/")
 
 
@@ -52,7 +60,7 @@ def test_execute_hyderabad(client):
     root = ET.fromstring(r.data)
     assert root.find(".//wps:ProcessSucceeded", NS) is not None
     stats = json.loads(root.find(".//wps:Output[ows:Identifier='stats']//wps:ComplexData", NS).text)
-    assert stats["date"] == "2026-05-23"
+    assert stats["date"] == newest_hyderabad_date()
     assert -1 <= stats["min"] <= stats["max"] <= 1
     assert stats["valid_fraction"] > 0.95
 
@@ -113,7 +121,7 @@ RAW_TEMPLATE = POST_TEMPLATE.replace(
 def test_raw_stats_returns_json_not_xml(client):
     r = client.get(EXEC + "&RawDataOutput=stats")
     assert r.status_code == 200 and r.headers["Content-Type"].startswith("application/json")
-    assert json.loads(r.data)["date"] == "2026-05-23"
+    assert json.loads(r.data)["date"] == newest_hyderabad_date()
 
 
 @needs_data
@@ -134,7 +142,7 @@ def test_raw_over_post(client):
     body = RAW_TEMPLATE.format(crs="urn:ogc:def:crs:EPSG::4326", lc="17.35 78.40", uc="17.45 78.55", out="stats")
     r = client.post("/wps", data=body, content_type="text/xml")
     assert r.status_code == 200
-    assert json.loads(r.data)["date"] == "2026-05-23"
+    assert json.loads(r.data)["date"] == newest_hyderabad_date()
 
 
 @needs_data
@@ -203,7 +211,7 @@ def test_spectral_index_describes_allowed_indices(client):
 @pytest.mark.parametrize("name", ["ndvi", "ndwi", "mndwi", "ndbi"])
 def test_spectral_index_executes_each_index(client, name):
     stats = json.loads(client.get(SI + f";index={name}&RawDataOutput=stats").data)
-    assert stats["index"] == name and stats["date"] == "2026-05-23"
+    assert stats["index"] == name and stats["date"] == newest_hyderabad_date()
     assert -1 <= stats["min"] <= stats["max"] <= 1 and stats["valid_fraction"] > 0.95
 
 
