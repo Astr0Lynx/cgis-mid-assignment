@@ -82,3 +82,14 @@ resource group when the course is over. Update the README's "Try it" address aft
 | Links in WPS replies say `http://localhost:5000` | `DOMAIN` missing in `deploy/.env`; fix it and run the `up -d` line again |
 | Page shows no Log in button | `BROWSER_LOGIN` not set: you are not running this compose file |
 | `scp` says permission denied | wrong key or user; the key file must not be readable by others (`chmod 600 key.pem`) |
+
+## Optional: fail2ban for SSH
+Bots probe port 22 constantly. Password login is already off, so they cannot get in; fail2ban just bans an address after 5
+failed logins in 10 minutes, for 1 hour (SSH only; the website is unaffected).
+```bash
+sudo apt-get install -y fail2ban
+printf '[DEFAULT]\nbantime = 1h\nfindtime = 10m\nmaxretry = 5\nbackend = systemd\n\n[sshd]\nenabled = true\nport = ssh\n' | sudo tee /etc/fail2ban/jail.local
+sudo systemctl enable --now fail2ban && sudo systemctl restart fail2ban
+sudo fail2ban-client status sshd        # shows banned addresses
+sudo fail2ban-client unban <ip>         # if you ever lock yourself out (or use Portal > VM > Run command)
+```
