@@ -12,7 +12,8 @@ from pywps import Service, configuration
 from pywps.exceptions import InvalidParameterValue
 
 import app.pywps_compat  # noqa: F401  (bbox axis order, see module docstring)
-from app.cleanup import start_background_purge
+from app.cleanup import purge_fetched, start_background_purge, start_periodic
+from app.fetchjobs import bp as fetchjobs_bp
 from app.webauth import bp as webauth_bp
 from app.processes.ndvi import Ndvi, SpectralIndex
 
@@ -47,8 +48,22 @@ JOBS_DB = STATE_DIR / "pywps-jobs.sqlite3"
 JOBS_DB.unlink(missing_ok=True)
 configuration.CONFIG.set("logging", "database", f"sqlite:///{JOBS_DB.as_posix()}")
 
+# Scenes fetched from Bhoonidhi on request live in data/_fetched and expire (the permanent cache is never touched).
+FETCH_TTL_HOURS = float(os.environ.get("FETCH_TTL_HOURS", 6))
+FETCH_MAX_GB = float(os.environ.get("FETCH_MAX_GB", 3))
+
+
+def _purge_fetched_scenes():
+    from app.scene import DATA_DIR, fetch_dir
+
+    purge_fetched(fetch_dir(DATA_DIR), FETCH_TTL_HOURS * 3600, int(FETCH_MAX_GB * 1e9))
+
+
+start_periodic(_purge_fetched_scenes, 600, "fetched-scene-expiry")
+
 flask_app = Flask(__name__)
 flask_app.register_blueprint(webauth_bp)  # browser login to Bhoonidhi (off unless BROWSER_LOGIN=1)
+flask_app.register_blueprint(fetchjobs_bp)  # fetch a scene for a logged-in session, as a background job
 
 
 def _requested_outputs():
@@ -132,13 +147,14 @@ def api_coverage():
     (The prepared cache holds only a clip of each scene, so the full footprint would promise areas that cannot be served.)
     """
     from app.radiometry import parse_band_meta
-    from app.scene import DATA_DIR, available_area
+    from app.scene import DATA_DIR, available_area, scene_folders
 
     features = []
-    for meta_file in sorted(Path(DATA_DIR).glob("*/BAND_META.txt")):
+    for folder in scene_folders(DATA_DIR):
+        meta_file = folder / "BAND_META.txt"
         try:
             m = parse_band_meta(meta_file)
-            ring = available_area(meta_file.parent)
+            ring = available_area(folder)
             when = datetime.strptime(m["DateOfPass"], "%d-%b-%Y").date().isoformat()
         except Exception:  # a folder without usable metadata or rasters is simply not listed
             continue

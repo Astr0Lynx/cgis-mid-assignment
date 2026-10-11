@@ -102,13 +102,26 @@ def available_area(folder: Path) -> list[tuple[float, float]]:
     return clip_convex(footprint, list(zip(lons, lats)))
 
 
+FETCHED_SUBDIR = "_fetched"  # scenes fetched from Bhoonidhi on request: they expire, the permanent cache never does
+
+
+def fetch_dir(data_dir: Path) -> Path:
+    return Path(data_dir) / FETCHED_SUBDIR
+
+
+def scene_folders(data_dir: Path) -> list[Path]:
+    """Every folder that holds a scene: the permanent ones (data_dir/<id>) and the fetched ones (data_dir/_fetched/<id>)."""
+    root = Path(data_dir)
+    return sorted(m.parent for pattern in ("*/BAND_META.txt", f"{FETCHED_SUBDIR}/*/BAND_META.txt") for m in root.glob(pattern))
+
+
 def find_scenes(bbox, data_dir: Path = DATA_DIR, min_valid: float = 0.95) -> list[Scene]:
     """Scenes under data_dir whose image (not just bounding rectangle) covers the bbox.
 
     Scenes are tilted, so the bounding rectangle overstates coverage; `valid_fraction`
     checks real pixels. Newest first.
     """
-    scenes = [Scene(p.parent) for p in Path(data_dir).glob("*/BAND_META.txt")]
+    scenes = [Scene(folder) for folder in scene_folders(data_dir)]
     hits = [s for s in scenes if s.covers(bbox) and s.valid_fraction(bbox) >= min_valid]
     return sorted(hits, key=lambda s: s.date, reverse=True)
 
