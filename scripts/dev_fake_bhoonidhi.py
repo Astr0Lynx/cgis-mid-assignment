@@ -56,6 +56,7 @@ def main(port: int) -> None:
                              OLDER_ID: make_zip(zips, OLDER_ID, "15-SEP-2026", CENTER),
                              TILTED_ID: make_zip(zips, TILTED_ID, "20-SEP-2026", CENTER)})
     square = lambda lon, lat, h: {"UL": (lon - h, lat + h), "UR": (lon + h, lat + h), "LR": (lon + h, lat - h), "LL": (lon - h, lat - h)}
+    api.filter_dates = True  # like the real search: only scenes inside the requested date range
     api.meta_corners = {SCENE_ID: square(*CENTER, 0.2), OLDER_ID: square(*CENTER, 0.2), TILTED_ID: square(82.5, 16.5, 0.1)}
     api.portal_otp = True
     webauth.make_client = lambda user, password: BhoonidhiClient(

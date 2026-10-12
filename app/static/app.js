@@ -373,24 +373,38 @@
   }
 
   // ---------- choosing a date: list the scenes Bhoonidhi has for the drawn area ----------
+  const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  function initSceneDates() {
+    const today = new Date(), from = new Date(today); from.setMonth(from.getMonth() - 6);
+    $('scene-to').max = $('scene-from').max = isoDay(today);
+    $('scene-to').value = isoDay(today); $('scene-from').value = isoDay(from);
+    document.querySelectorAll('#scene-search .presets button').forEach((b) => b.addEventListener('click', () => {
+      const months = parseInt(b.dataset.months, 10), t = new Date(), f = new Date(t);
+      if (months) f.setMonth(f.getMonth() - months); else f.setTime(new Date('2011-01-01T12:00:00').getTime());
+      $('scene-to').value = isoDay(t); $('scene-from').value = isoDay(f);
+    }));
+  }
   const satellite = (collection) => { const m = /ResourceSat-(\w+?)_/i.exec(collection || ''); return m ? `Resourcesat-${m[1]}` : 'Resourcesat'; };
   async function findScenes() {
     if (!bbox) return;
     const btn = $('scene-find'), note = $('scene-note');
+    const start = $('scene-from').value, end = $('scene-to').value;
+    if (!start || !end) { note.textContent = 'Pick the first and the last date to search.'; return; }
+    if (start > end) { note.textContent = 'The first date is after the last date.'; return; }
     try {
       btn.disabled = true;
       let r = null;
       for (let attempt = 0; attempt < 2 && !(r && r.ok); attempt++) {
         if (!account.logged_in && !(await ensureLogin())) { note.textContent = 'Login cancelled.'; return; }
         setStatus('Searching Bhoonidhi for scenes over this area…', 'busy'); note.textContent = '';
-        r = await api('/api/scenes', { bbox: [bbox.s, bbox.w, bbox.n, bbox.e], days: parseInt($('scene-days').value, 10) });
+        r = await api('/api/scenes', { bbox: [bbox.s, bbox.w, bbox.n, bbox.e], start, end });
         if (r.status === 401) { await loadAccount(); r = null; }
       }
       if (!r || !r.ok) { throw new Error((r && r.data.error) || 'Could not search Bhoonidhi.'); }
       const scenes = r.data.scenes;
       refreshArea();  // reset the list to this area's prepared scenes
       $('scene-search').hidden = false;
-      if (!scenes.length) { note.textContent = `Bhoonidhi lists no online LISS-III scene covering this area in the last ${r.data.days} days.`; setStatus(''); return; }
+      if (!scenes.length) { note.textContent = `Bhoonidhi lists no online LISS-III scene covering this area between ${start} and ${end}. Try a wider range.`; setStatus(''); return; }
       const date = $('date'), group = document.createElement('optgroup');
       group.label = 'On Bhoonidhi (downloaded when you press Run)';
       let first = null;
@@ -405,7 +419,8 @@
       if (first) date.value = first.value;
       setRunDisabled(false);
       const usable = scenes.filter((s) => s.covers !== false).length;
-      note.textContent = `${scenes.length} scene${scenes.length > 1 ? 's' : ''} on Bhoonidhi over this area in the last ${r.data.days} days (${usable} usable). `
+      note.textContent = `${scenes.length} scene${scenes.length > 1 ? 's' : ''} on Bhoonidhi over this area between ${start} and ${end} (${usable} usable). `
+        + (r.data.more ? 'Only the newest are listed: narrow the range to see older ones. ' : '')
         + 'Pick a date in the list above, then press Run. Each download is about 140 MB.';
       setStatus('');
     } catch (e) {
@@ -605,6 +620,7 @@
     $('clear').addEventListener('click', clearAll);
     $('run').addEventListener('click', run);
     $('scene-find').addEventListener('click', findScenes);
+    initSceneDates();
     $('op-caps').addEventListener('click', (e) => operation('caps', e.currentTarget));
     $('op-describe').addEventListener('click', (e) => operation('describe', e.currentTarget));
     $('op-exec').addEventListener('click', run);

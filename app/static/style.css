@@ -105,6 +105,10 @@ body.resizing #map { pointer-events: none; }
 .layer-tools .btn { padding: 2px 7px; font-size: 12px; }
 .layer-dl { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
 .layer-dl a { color: var(--accent); }
-#scene-search .row { flex-wrap: nowrap; align-items: stretch; }
-#scene-search .btn { flex: none; white-space: nowrap; }
-#scene-days { width: auto; flex: 1 1 100px; min-width: 0; }
+
+#scene-search { margin-top: 8px; }
+#scene-search .dates { display: flex; gap: 8px; }
+#scene-search .dates label { flex: 1; min-width: 0; color: var(--muted); font-size: 12.5px; }
+#scene-search .dates input { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; font: inherit; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); color-scheme: light dark; }
+#scene-search .presets { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
+#scene-search #scene-find { width: 100%; }

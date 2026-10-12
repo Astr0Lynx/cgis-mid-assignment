@@ -23,7 +23,7 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 
 - DONE (2026-10-12): saved layers on the map page (keep every result, select, show/hide, opacity, reorder, rename, remove, per-layer downloads). Not done: reading pixel values under the cursor (needs a small server endpoint reading the stored COG).
 
-- DONE (2026-10-12): the user can list the Bhoonidhi scenes over the drawn area (`/api/scenes`, with a true-footprint check for the newest ten) and fetch a chosen date or scene instead of only the newest.
+- DONE (2026-10-12): the user can list the Bhoonidhi scenes over the drawn area (`/api/scenes`, with a true-footprint check for the newest ten) and fetch a chosen date or scene instead of only the newest. Any From/To range back to 2011 works (year-long search windows, newest first, newest 40 listed).
 
 ## 2. Expand beyond NDVI  (STATUS: DONE for NDVI/NDWI/MNDWI/NDBI via process `spectral-index`)
 - DONE: registry in `app/indices.py`, process `spectral-index`, tests incl. a real-data lake check. Decided NOT to wait for TOA.

@@ -84,10 +84,11 @@ Endpoint (local): `http://localhost:5000/wps`
 The map page's **Advanced** section offers the quantity (`radiometry`) and the colour scale (`colour_scale`). The absolute scale is always available. Reflectance (`toa`) is built end to end and tested, but is **disabled until a cited per-band solar irradiance (ESUN) table is configured** in `app/esun_liss3.json` (a `source` and a value for each of bands 2-5, in mW/cm2/um); the option then switches on by itself, here and in the WPS (`/api/info` reports `toa_available`). I do not enter those numbers from memory, because wrong constants would give plausible but wrong reflectance. On radiance, the absolute scale makes NDVI look nearly flat (values sit near 0), which is why the relative stretch is the default.
 
 ### Choosing which Bhoonidhi scene to fetch
-Where logging in is enabled, the date section has a **Find Bhoonidhi scenes** button with a search window (2 months, 6 months or
-a year). It logs you in if needed (the emailed code, in the page), searches Bhoonidhi for the online LISS-III scenes whose footprint
+Where logging in is enabled, the date section has a **Find Bhoonidhi scenes** button with **From** and **To** calendar date
+pickers (default: the last six months; quick buttons for 2 months, 6 months, 1 year, 3 years and everything since 2011). It logs you in if needed (the emailed code, in the page), searches Bhoonidhi for the online LISS-III scenes whose footprint
 covers the drawn area, and lists them by date with the satellite. For the newest ten, the scene's true image footprint is read
-from its public metadata file, so each entry says whether the tilted image really covers the area; scenes that do not are shown but
+from its public metadata file, so each entry says whether the tilted image really covers the area (any range back to 2011 can be
+searched: it is searched in year-long windows, newest first, and the list shows the newest 40 with a note when older ones exist); scenes that do not are shown but
 cannot be chosen. Pick a date and press **Run**: exactly that scene is downloaded (a chosen scene id goes to `/api/fetch`).
 Without searching, a Run on an uncovered area still fetches the newest suitable scene, as before. The listing is a separate
 helper endpoint (`/api/scenes`, rate-limited per session), not part of the WPS.

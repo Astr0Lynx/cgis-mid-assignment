@@ -96,3 +96,68 @@ def test_scene_ids_are_validated(env, bad):
     c, *_ = env
     login(c)
     assert post(c, "/api/fetch", {"bbox": AREA, "scene_id": bad}).status_code == 400
+
+
+# ---- any date range, not a fixed list of presets ------------------------------------------------------------------------------
+def listing(c, **body):
+    return post(c, "/api/scenes", {"bbox": AREA, **body})
+
+
+def test_the_listing_honours_the_chosen_start_and_end(env):
+    c, api, _ = env
+    api.filter_dates = True
+    login(c)
+    only_may = listing(c, start="2026-05-01", end="2026-05-31").get_json()
+    assert [s["date"] for s in only_may["scenes"]] == ["2026-05-23", "2026-05-18"] and only_may["more"] is False
+    assert (only_may["start"], only_may["end"]) == ("2026-05-01", "2026-05-31")
+    assert listing(c, start="2026-06-01", end="2026-09-30").get_json()["scenes"] == []   # a gap: honestly empty
+
+
+def test_a_long_range_is_searched_in_year_windows_newest_first(env, monkeypatch):
+    c, api, _ = env
+    api.filter_dates = True
+    login(c)
+    got = listing(c, start="2022-01-01", end="2026-10-12").get_json()
+    assert [s["date"] for s in got["scenes"]] == ["2026-10-09", "2026-05-23", "2026-05-18"]   # older windows are searched too
+    windows = api.search_windows
+    assert len(windows) == 5 and windows[0][1].isoformat() == "2026-10-12" and windows == sorted(windows, reverse=True)
+    assert all((hi - lo).days <= 364 for lo, hi in windows)
+
+
+def test_a_range_with_more_scenes_than_the_list_shows_says_so(env, monkeypatch):
+    from app import live_fetch
+
+    c, api, _ = env
+    api.filter_dates = True
+    monkeypatch.setattr(live_fetch, "LIST_LIMIT", 2)
+    login(c)
+    got = listing(c, start="2026-01-01", end="2026-10-12").get_json()
+    assert [s["date"] for s in got["scenes"]] == ["2026-10-09", "2026-05-23"] and got["more"] is True  # the oldest was left out
+
+
+@pytest.mark.parametrize("body", [
+    {"start": "2026-06-01", "end": "2026-05-01"},      # start after end
+    {"start": "2026-05-01", "end": "2999-01-01"},      # the future
+    {"start": "2005-01-01", "end": "2026-05-01"},      # before Resourcesat-2
+    {"start": "yesterday", "end": "2026-05-01"},       # not a date
+])
+def test_bad_date_ranges_are_refused(env, body):
+    c, *_ = env
+    login(c)
+    assert listing(c, **body).status_code == 400
+
+
+def test_the_whole_history_since_2011_can_be_searched(env):
+    c, api, _ = env
+    api.filter_dates = True
+    login(c)
+    got = listing(c, start="2011-01-01", end="2026-10-12")
+    assert got.status_code == 200 and len(got.get_json()["scenes"]) == 3
+    assert len(api.search_windows) == 16                                # one search per year-long window
+
+
+def test_a_scene_returned_by_several_searches_is_listed_once(env):
+    c, api, _ = env
+    login(c)                      # this fake ignores the date range, so every year-long window returns the same scenes
+    got = listing(c, start="2011-01-01", end="2026-10-12").get_json()["scenes"]
+    assert sorted(s["id"] for s in got) == sorted([MISSES, SCENE, OLDER])

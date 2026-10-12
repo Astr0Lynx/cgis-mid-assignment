@@ -102,6 +102,8 @@ class FakeBhoonidhi:
         self.portal_sat, self.portal_sensor = "RS2", "LIS3"  # the portal's own codes for the scenes it lists
         self.portal_selections = {"ResourceSat-2_LISS3_L2", "ResourceSat-2_LISS3_L2-Archives"}  # names it recognises
         self.portal_search_bodies = []
+        self.filter_dates = False   # True: searches only return scenes inside the requested datetime range
+        self.search_windows = []
         self.meta_corners = {}  # scene id -> {"UL": (lon, lat), ...}: what the portal's metadata file reports (absent = 404)
         self.portal_otp = False  # does the portal login demand an emailed one-time code?
         self.portal_otp_code = "123456"
@@ -147,8 +149,18 @@ class FakeBhoonidhi:
         elif headers.get("Authorization", "").removeprefix("Bearer ") not in self.valid_tokens:
             return FakeResponse(401, {"ErrorCode": "401", "Description": "session expired"})
         if path == "/data/search":
-            return FakeResponse(200, {"type": "FeatureCollection", "features": self.features,
-                                      "context": {"limit": 100, "returned": len(self.features)}})
+            features = self.features
+            window = (kw.get("json") or {}).get("datetime")
+            if self.filter_dates and window:  # opt-in: honour the requested range, like the real search does
+                from datetime import date as _date
+
+                from app.bhoonidhi_client import date_from_id
+
+                lo, hi = (_date.fromisoformat(part[:10]) for part in window.split("/"))
+                features = [f for f in features if (d := date_from_id(f["id"])) is not None and lo <= d <= hi]
+                self.search_windows.append((lo, hi))
+            return FakeResponse(200, {"type": "FeatureCollection", "features": features,
+                                      "context": {"limit": 100, "returned": len(features)}})
         if path == "/download":
             if self.download_response is not None:  # a test script for an unusual server behaviour
                 return self.download_response(kw)

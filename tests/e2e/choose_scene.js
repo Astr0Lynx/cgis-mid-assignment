@@ -23,6 +23,20 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     ok('2 the button to choose a date appears once an area is drawn', await p.$eval('#scene-search', (e) => !e.hidden));
     ok('3 the default is still the newest scene', /Newest scene on Bhoonidhi/.test(await p.$eval('#date', (s) => s.options[0].text)));
 
+    // the calendar: defaults, presets and a sanity check before anything is sent
+    const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    ok('3a "To" defaults to today and "From" to about six months earlier', (await p.$eval('#scene-to', (e) => e.value)) === iso(new Date()) && /^\d{4}-\d{2}-\d{2}$/.test(await p.$eval('#scene-from', (e) => e.value)));
+    ok('3b the pickers are real date inputs (a calendar)', (await p.$eval('#scene-from', (e) => e.type)) === 'date' && (await p.$eval('#scene-to', (e) => e.type)) === 'date');
+    await p.click('#scene-search .presets button[data-months="0"]');
+    ok('3c the "All" preset reaches back to 2011', (await p.$eval('#scene-from', (e) => e.value)) === '2011-01-01');
+    await p.click('#scene-search .presets button[data-months="36"]');
+    const y3 = await p.$eval('#scene-from', (e) => e.value);
+    ok('3d the "3 years" preset sets a start about three years back', Math.abs(new Date().getFullYear() - 3 - parseInt(y3.slice(0, 4), 10)) <= 1, y3);
+    await p.$eval('#scene-from', (e, v) => { e.value = v; }, '2999-01-01');
+    await p.click('#scene-find'); await wait(300);
+    ok('3e a start after the end is explained and nothing is sent (no login dialog)', /after the last date/.test(await p.$eval('#scene-note', (e) => e.textContent)) && !(await p.$eval('#login', (d) => d.open)));
+    await p.click('#scene-search .presets button[data-months="0"]');   // search everything since 2011
+
     await p.click('#scene-find');
     await p.waitForSelector('#login[open]', { timeout: 5000 });
     ok('4 searching while logged out asks you to log in', true);

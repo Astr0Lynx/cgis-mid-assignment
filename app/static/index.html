@@ -39,14 +39,18 @@
       <select id="date" disabled><option>Draw an area first</option></select>
       <p id="date-info" class="meta"></p>
       <div id="scene-search" hidden>
-        <div class="row">
-          <button id="scene-find" class="btn" type="button" title="Search Bhoonidhi for the scenes that cover this area and choose one by date">Find Bhoonidhi scenes</button>
-          <select id="scene-days" aria-label="How far back to search">
-            <option value="60">last 2 months</option>
-            <option value="180" selected>last 6 months</option>
-            <option value="365">last year</option>
-          </select>
+        <div class="dates">
+          <label>From <input type="date" id="scene-from" min="2011-01-01"></label>
+          <label>To <input type="date" id="scene-to" min="2011-01-01"></label>
         </div>
+        <div class="presets" role="group" aria-label="Quick ranges">
+          <button type="button" class="btn ghost small" data-months="2">2 months</button>
+          <button type="button" class="btn ghost small" data-months="6">6 months</button>
+          <button type="button" class="btn ghost small" data-months="12">1 year</button>
+          <button type="button" class="btn ghost small" data-months="36">3 years</button>
+          <button type="button" class="btn ghost small" data-months="0" title="Everything since Resourcesat-2 started (2011)">All</button>
+        </div>
+        <button id="scene-find" class="btn" type="button" title="Search Bhoonidhi for the scenes that cover this area in this date range and choose one">Find Bhoonidhi scenes</button>
         <p id="scene-note" class="meta"></p>
       </div>
     </section>

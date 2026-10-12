@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -143,9 +143,17 @@ def api_scenes():
     body = request.get_json(silent=True) or {}
     try:
         miny, minx, maxy, maxx = (float(v) for v in body["bbox"])
-        days = int(body.get("days", 180))
+        today = date.today()
+        end = date.fromisoformat(body["end"]) if body.get("end") else today
+        start = date.fromisoformat(body["start"]) if body.get("start") else end - timedelta(days=180)
     except (KeyError, TypeError, ValueError):
-        return _fail("Send bbox as [minlat, minlon, maxlat, maxlon] and optionally days.", 400)
+        return _fail("Send bbox as [minlat, minlon, maxlat, maxlon] and optionally start and end as YYYY-MM-DD.", 400)
+    if start > end:
+        return _fail("The start date is after the end date.", 400)
+    if end > today + timedelta(days=1):
+        return _fail("The end date is in the future.", 400)
+    if start < live_fetch.EARLIEST:
+        return _fail(f"There is no Resourcesat-2 data before {live_fetch.EARLIEST.isoformat()}.", 400)
     if not (-90 <= miny < maxy <= 90 and -180 <= minx < maxx <= 180):
         return _fail("Invalid area.", 400)
     bbox = (minx, miny, maxx, maxy)
@@ -157,13 +165,13 @@ def api_scenes():
     _last_search[session.sid] = now
     try:
         with session.lock:
-            scenes = live_fetch.list_scenes(session.client, bbox, days)
+            listing = live_fetch.list_scenes(session.client, bbox, start, end)
     except BhoonidhiError as e:
         return _fail(str(e), 502)
     except Exception as e:
         LOGGER.error("scene listing failed: %s", type(e).__name__)
         return _fail("Searching Bhoonidhi failed unexpectedly.", 502)
-    return jsonify({"scenes": scenes, "days": max(1, min(days, live_fetch.MAX_LIST_DAYS))})
+    return jsonify({"scenes": listing["scenes"], "more": listing["more"], "start": start.isoformat(), "end": end.isoformat()})
 
 
 @bp.route("/api/fetch/<job_id>")

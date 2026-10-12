@@ -80,20 +80,31 @@ def precheck(client, items: list[Item], bbox, note) -> list[Item]:
     return kept
 
 
-MAX_LIST_DAYS = 400
+EARLIEST = date(2011, 1, 1)  # Resourcesat-2 was launched in 2011; nothing earlier can match
+WINDOW_DAYS = 365           # one Bhoonidhi search covers at most this much, newest window first (a search returns one page)
 LIST_LIMIT = 40
 
 
-def list_scenes(client, bbox, days: int, max_checks: int = 10) -> list[dict]:
-    """The online scenes whose footprint contains the bbox in the last `days` days, newest first, for the user to choose from.
+def list_scenes(client, bbox, start: date, end: date, max_checks: int = 10) -> dict:
+    """The online scenes whose footprint contains the bbox between `start` and `end`, newest first, to choose from.
 
-    For the newest `max_checks` the scene's TRUE image footprint is read from its public metadata file (portal clients only),
-    so each entry says whether the tilted image really covers the area: covers is True, False, or None when unknown.
+    The range is searched in windows of a year, newest first, because one search returns a single page of results; searching
+    stops once LIST_LIMIT scenes are found (`more` then says older ones exist in the range). For the newest `max_checks` the
+    scene's TRUE image footprint is read from its public metadata file (portal clients only): covers is True, False, or None
+    when unknown.
     """
-    days = max(1, min(int(days), MAX_LIST_DAYS))
-    end = date.today()
-    found = client.search(bbox, end - timedelta(days=days), end)
-    usable = [i for i in found if i.online is not False and footprint_contains_bbox(i.geometry, bbox)]
+    usable: list[Item] = []
+    more = False
+    window_end = end
+    while window_end >= start:
+        window_start = max(start, window_end - timedelta(days=WINDOW_DAYS - 1))
+        found = client.search(bbox, window_start, window_end)
+        usable += [i for i in found if i.online is not False and footprint_contains_bbox(i.geometry, bbox)]
+        window_end = window_start - timedelta(days=1)
+        if len(usable) >= LIST_LIMIT:
+            more = window_end >= start or len(usable) > LIST_LIMIT
+            break
+    usable = list({i.id: i for i in usable}.values())  # windows never overlap, but a repeated scene must not be listed twice
     usable.sort(key=lambda i: i.date or date.min, reverse=True)
     out = []
     for n, item in enumerate(usable[:LIST_LIMIT]):
@@ -108,7 +119,7 @@ def list_scenes(client, bbox, days: int, max_checks: int = 10) -> list[dict]:
                 covers = None
         out.append({"id": item.id, "date": item.date.isoformat() if item.date else None,
                     "collection": item.collection, "covers": covers})
-    return out
+    return {"scenes": out, "more": more}
 
 
 def ensure_scene(bbox, wanted: date | None, data_dir: Path, progress=None, client: BhoonidhiClient | None = None,
