@@ -80,8 +80,39 @@ def precheck(client, items: list[Item], bbox, note) -> list[Item]:
     return kept
 
 
+MAX_LIST_DAYS = 400
+LIST_LIMIT = 40
+
+
+def list_scenes(client, bbox, days: int, max_checks: int = 10) -> list[dict]:
+    """The online scenes whose footprint contains the bbox in the last `days` days, newest first, for the user to choose from.
+
+    For the newest `max_checks` the scene's TRUE image footprint is read from its public metadata file (portal clients only),
+    so each entry says whether the tilted image really covers the area: covers is True, False, or None when unknown.
+    """
+    days = max(1, min(int(days), MAX_LIST_DAYS))
+    end = date.today()
+    found = client.search(bbox, end - timedelta(days=days), end)
+    usable = [i for i in found if i.online is not False and footprint_contains_bbox(i.geometry, bbox)]
+    usable.sort(key=lambda i: i.date or date.min, reverse=True)
+    out = []
+    for n, item in enumerate(usable[:LIST_LIMIT]):
+        covers = None
+        if n < max_checks and getattr(client, "download_auth", None) == "portal":
+            try:
+                record = client.find_portal_record(item, bbox)
+                meta = client.fetch_portal_meta(record) if record else None
+                geometry = image_corners_geometry(meta) if meta else None
+                covers = footprint_contains_bbox(geometry, bbox) if geometry else None
+            except BhoonidhiError:
+                covers = None
+        out.append({"id": item.id, "date": item.date.isoformat() if item.date else None,
+                    "collection": item.collection, "covers": covers})
+    return out
+
+
 def ensure_scene(bbox, wanted: date | None, data_dir: Path, progress=None, client: BhoonidhiClient | None = None,
-                 min_valid: float = 0.95) -> Scene:
+                 min_valid: float = 0.95, scene_id: str | None = None) -> Scene:
     """Make sure a local scene covers bbox (on `wanted`, if given) and return it.
 
     `progress(message, percent)` is called along the way. Raises BhoonidhiError with a message safe to show.
@@ -89,8 +120,13 @@ def ensure_scene(bbox, wanted: date | None, data_dir: Path, progress=None, clien
     note = progress or (lambda message, percent: None)
     client = client or get_client()
     note("Searching Bhoonidhi", 10)
-    options = precheck(client, candidates(bbox, wanted, client), bbox, note)
+    options = candidates(bbox, wanted, client)
+    if scene_id:  # the user picked one particular scene from the list
+        options = [i for i in options if i.id == scene_id]
+    options = precheck(client, options, bbox, note)
     if not options:
+        if scene_id:
+            raise BhoonidhiError("That scene does not cover this area (or is no longer online); pick another one")
         raise BhoonidhiError(
             "No online Resourcesat LISS-III scene on Bhoonidhi covers this bbox"
             + (f" on {wanted.isoformat()}" if wanted else f" in the last {LOOKBACK_DAYS} days"))

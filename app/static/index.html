@@ -38,6 +38,17 @@
       <h2><span class="step">2</span> Scene date</h2>
       <select id="date" disabled><option>Draw an area first</option></select>
       <p id="date-info" class="meta"></p>
+      <div id="scene-search" hidden>
+        <div class="row">
+          <button id="scene-find" class="btn" type="button" title="Search Bhoonidhi for the scenes that cover this area and choose one by date">Find Bhoonidhi scenes</button>
+          <select id="scene-days" aria-label="How far back to search">
+            <option value="60">last 2 months</option>
+            <option value="180" selected>last 6 months</option>
+            <option value="365">last year</option>
+          </select>
+        </div>
+        <p id="scene-note" class="meta"></p>
+      </div>
     </section>
 
     <section>

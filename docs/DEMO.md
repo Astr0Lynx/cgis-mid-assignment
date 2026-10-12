@@ -94,7 +94,7 @@ image is tilted and had no data there, and it was refused."
 **Live fetch from the page (on the Azure instance, where login is switched on).** Open `https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/`.
 (A local copy also works: `BROWSER_LOGIN=1 PORT=5001 .venv/Scripts/python -m app.server`, then `http://127.0.0.1:5001/`.)
 Draw a box outside the outlined scenes (for example over Vijayawada or Warangal, inside a
-real Bhoonidhi scene), leave the date on "Newest scene on Bhoonidhi", press **Run**. The dialog asks for your Bhoonidhi
+real Bhoonidhi scene), press **Find Bhoonidhi scenes** (or leave the date on "Newest scene on Bhoonidhi"), pick a date from the list, press **Run**. The dialog asks for your Bhoonidhi
 user id and password, then for the code Bhoonidhi emails you; type it in the page and the run continues by itself with a
 progress bar (about 140 MB). Say: "I only typed into this page and my mailbox; the server uses the password once to log in to Bhoonidhi and does not store it." Do this **once**, rehearsed,
 with a spare minute for the download; if the network is slow, show the same flow with the made-up archive instead:

@@ -105,3 +105,6 @@ body.resizing #map { pointer-events: none; }
 .layer-tools .btn { padding: 2px 7px; font-size: 12px; }
 .layer-dl { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
 .layer-dl a { color: var(--accent); }
+#scene-search .row { flex-wrap: nowrap; align-items: stretch; }
+#scene-search .btn { flex: none; white-space: nowrap; }
+#scene-days { width: auto; flex: 1 1 100px; min-width: 0; }

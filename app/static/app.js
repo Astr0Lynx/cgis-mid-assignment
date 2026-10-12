@@ -100,6 +100,7 @@
       dinfo.className = 'meta';
       dinfo.textContent = `${cover.length} prepared scene${cover.length > 1 ? 's' : ''} cover${cover.length > 1 ? '' : 's'} this area.`;
     }
+    $('scene-search').hidden = !account.enabled; $('scene-note').textContent = '';
     setRunDisabled(!ok);
   }
   function startDrawing() {
@@ -129,7 +130,7 @@
   function clearAll() {
     stopDrawing(); setStatus('');
     if (rect) { rect.remove(); rect = null; }
-    bbox = null; setRunDisabled(true);
+    bbox = null; setRunDisabled(true); $('scene-search').hidden = true;
     $('bbox-info').className = 'meta'; $('bbox-info').textContent = 'No area selected.';
     $('date').innerHTML = '<option>Draw an area first</option>'; $('date').disabled = true; $('date-info').textContent = '';
   }
@@ -206,8 +207,9 @@
     if (layers.length >= MAX_LAYERS) { setStatus(`You have ${MAX_LAYERS} saved layers: remove one first.`, 'err'); return; }
     setRunDisabled(true);
     let date = $('date').value;
-    if (date === FETCH) {
-      date = await fetchFlow();  // logs in if needed, fetches the scene, returns its date (null if cancelled or failed)
+    if (date === FETCH || date.startsWith(FETCH + '|')) {
+      const [, id, day] = date.split('|');
+      date = await fetchFlow(id ? { id, date: day } : null);  // logs in if needed, fetches the scene, returns its date (null if cancelled or failed)
       if (!date) { refreshRunButton(); return; }
     }
     const index = $('index').value, url = executeUrl(index, date);
@@ -370,6 +372,49 @@
     layers = []; selectedId = null; renderLayers(); renderDetails();
   }
 
+  // ---------- choosing a date: list the scenes Bhoonidhi has for the drawn area ----------
+  const satellite = (collection) => { const m = /ResourceSat-(\w+?)_/i.exec(collection || ''); return m ? `Resourcesat-${m[1]}` : 'Resourcesat'; };
+  async function findScenes() {
+    if (!bbox) return;
+    const btn = $('scene-find'), note = $('scene-note');
+    try {
+      btn.disabled = true;
+      let r = null;
+      for (let attempt = 0; attempt < 2 && !(r && r.ok); attempt++) {
+        if (!account.logged_in && !(await ensureLogin())) { note.textContent = 'Login cancelled.'; return; }
+        setStatus('Searching Bhoonidhi for scenes over this area…', 'busy'); note.textContent = '';
+        r = await api('/api/scenes', { bbox: [bbox.s, bbox.w, bbox.n, bbox.e], days: parseInt($('scene-days').value, 10) });
+        if (r.status === 401) { await loadAccount(); r = null; }
+      }
+      if (!r || !r.ok) { throw new Error((r && r.data.error) || 'Could not search Bhoonidhi.'); }
+      const scenes = r.data.scenes;
+      refreshArea();  // reset the list to this area's prepared scenes
+      $('scene-search').hidden = false;
+      if (!scenes.length) { note.textContent = `Bhoonidhi lists no online LISS-III scene covering this area in the last ${r.data.days} days.`; setStatus(''); return; }
+      const date = $('date'), group = document.createElement('optgroup');
+      group.label = 'On Bhoonidhi (downloaded when you press Run)';
+      let first = null;
+      scenes.forEach((s) => {
+        const mark = s.covers === true ? '✓ covers the area' : s.covers === false ? '✗ image misses the area' : 'coverage not checked';
+        const o = new Option(`${s.date} · ${satellite(s.collection)} · …${s.id.replace(/PS\w+$/, '').slice(-7)} · ${mark}`, `${FETCH}|${s.id}|${s.date}`);
+        if (s.covers === false) o.disabled = true; else if (!first) first = o;
+        group.append(o);
+      });
+      date.insertBefore(group, date.firstChild);
+      date.disabled = false;
+      if (first) date.value = first.value;
+      setRunDisabled(false);
+      const usable = scenes.filter((s) => s.covers !== false).length;
+      note.textContent = `${scenes.length} scene${scenes.length > 1 ? 's' : ''} on Bhoonidhi over this area in the last ${r.data.days} days (${usable} usable). `
+        + 'Pick a date in the list above, then press Run. Each download is about 140 MB.';
+      setStatus('');
+    } catch (e) {
+      setStatus('Error: ' + e.message, 'err');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   // ---------- Bhoonidhi account: log in (with the emailed code) and fetch a scene ----------
   async function api(path, body) {
     const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
@@ -434,12 +479,12 @@
     setStatus(`${v.message} (${v.percent || 0}%)`, 'busy');
   }
   // Returns the date of the scene that is now available for the drawn area, or null if cancelled or failed.
-  async function fetchFlow() {
+  async function fetchFlow(choice) {
     try {
       for (let attempt = 0; attempt < 2; attempt++) {
         if (!account.logged_in && !(await ensureLogin())) { setStatus('Login cancelled; nothing was fetched.', ''); return null; }
         setStatus('Starting the fetch from Bhoonidhi…', 'busy');
-        const r = await api('/api/fetch', { bbox: [bbox.s, bbox.w, bbox.n, bbox.e] });
+        const r = await api('/api/fetch', Object.assign({ bbox: [bbox.s, bbox.w, bbox.n, bbox.e] }, choice ? { date: choice.date, scene_id: choice.id } : {}));
         if (r.status === 401) { await loadAccount(); continue; }  // the session expired: log in again once
         if (!r.ok) throw new Error(r.data.error || 'Could not start the fetch.');
         for (;;) {
@@ -559,6 +604,7 @@
     $('demo').addEventListener('click', () => { setBbox(DEMO); map.fitBounds(rect.getBounds().pad(0.6)); });
     $('clear').addEventListener('click', clearAll);
     $('run').addEventListener('click', run);
+    $('scene-find').addEventListener('click', findScenes);
     $('op-caps').addEventListener('click', (e) => operation('caps', e.currentTarget));
     $('op-describe').addEventListener('click', (e) => operation('describe', e.currentTarget));
     $('op-exec').addEventListener('click', run);

@@ -5,7 +5,7 @@
 No account, no email, no network and no download quota are involved:
   - log in with any user id and the password  correct-horse
   - the emailed one-time code is            123456
-  - the fake archive holds one made-up scene (1 Oct 2026) around Vijayawada, far from the prepared Hyderabad scenes:
+  - the fake archive holds three made-up scenes around Vijayawada (1 Oct and 15 Sep cover the area; 20 Sep is tilted away), far from the prepared Hyderabad scenes:
     draw a box around 80.6 E, 16.5 N (a few km wide) and press Run to see the whole flow.
 Fetched scenes go to data/_fetched and expire like real ones. This is a development aid, never for a public instance.
 """
@@ -26,7 +26,9 @@ from app.server import flask_app  # noqa: E402
 from tests.live_helpers import FakeBhoonidhi, FakeResponse, feature, footprint, make_zip  # noqa: E402
 
 CENTER = (80.60, 16.50)  # Vijayawada
-SCENE_ID = "R2301OCT2026999999999900060PSANSTUC00GTDF"
+SCENE_ID = "R2301OCT2026999999999900060PSANSTUC00GTDF"      # 1 Oct, covers the area
+OLDER_ID = "R2315SEP2026999999999900060PSANSTUC00GTDF"      # 15 Sep, covers the area
+TILTED_ID = "R2320SEP2026999999999900060PSANSTUC00GTDF"     # 20 Sep: listed by the search, but its true image is elsewhere
 
 
 class SlowFake(FakeBhoonidhi):
@@ -48,8 +50,13 @@ class SlowFake(FakeBhoonidhi):
 
 def main(port: int) -> None:
     zips = Path(tempfile.mkdtemp(prefix="fake-bhoonidhi-"))
-    api = SlowFake([feature(SCENE_ID, geometry=footprint(CENTER, 0.25))],
-                   archives={SCENE_ID: make_zip(zips, SCENE_ID, "01-OCT-2026", CENTER)})
+    api = SlowFake([feature(SCENE_ID, geometry=footprint(CENTER, 0.25)), feature(TILTED_ID, geometry=footprint(CENTER, 0.25)),
+                    feature(OLDER_ID, geometry=footprint(CENTER, 0.25))],
+                   archives={SCENE_ID: make_zip(zips, SCENE_ID, "01-OCT-2026", CENTER),
+                             OLDER_ID: make_zip(zips, OLDER_ID, "15-SEP-2026", CENTER),
+                             TILTED_ID: make_zip(zips, TILTED_ID, "20-SEP-2026", CENTER)})
+    square = lambda lon, lat, h: {"UL": (lon - h, lat + h), "UR": (lon + h, lat + h), "LR": (lon + h, lat - h), "LL": (lon - h, lat - h)}
+    api.meta_corners = {SCENE_ID: square(*CENTER, 0.2), OLDER_ID: square(*CENTER, 0.2), TILTED_ID: square(82.5, 16.5, 0.1)}
     api.portal_otp = True
     webauth.make_client = lambda user, password: BhoonidhiClient(
         user, password, session=api, sleep=lambda s: None, download_auth="portal")

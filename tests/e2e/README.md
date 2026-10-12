@@ -11,6 +11,12 @@ Checks: an uncovered box offers a fetch; Run opens the login dialog; the emailed
 accepted); the pending Run resumes with a progress bar and shows the result; the password is gone from the page; logout; a
 second visitor reuses the fetched scene without logging in; logging in by choice starts nothing; cancelling fetches nothing.
 
+## Choosing a Bhoonidhi scene
+`BASE=http://localhost:5057 node choose_scene.js` against `python scripts/dev_fake_bhoonidhi.py 5057` (fake archive with three scenes,
+one of them tilted away). Delete `data/_fetched` between runs: a scene fetched by an earlier run counts as prepared.
+Checks: the search button appears with an area; searching asks for the login; the scenes are listed newest first with a coverage
+mark; the tilted one cannot be chosen; Run fetches exactly the chosen date and saves it as a layer.
+
 ## Saved layers
 `node layers.js` (against any running instance with the prepared scenes, `BASE=http://127.0.0.1:5000`; run it from
 `tests/e2e`) checks the saved-layers list: each run is kept, selecting a layer shows its own details and download links,

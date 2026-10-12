@@ -5,6 +5,7 @@ endpoint to bring a scene onto the server (using the user's own session), polls 
 disk it runs the ordinary WPS Execute. Fetched scenes live in data/_fetched and expire (see app.cleanup.purge_fetched).
 """
 import logging
+import re
 import threading
 import time
 import uuid
@@ -22,7 +23,11 @@ LOGGER = logging.getLogger("bhoonidhi.fetchjobs")
 MAX_RUNNING = 2  # fetches at once across all sessions (each is a ~140 MB download)
 KEEP_FINISHED_S = 3600
 
+SCENE_ID_RE = re.compile(r"[A-Za-z0-9_]{8,80}")
+SEARCH_COOLDOWN_S = 4  # per session: a listing makes several requests to Bhoonidhi
+
 bp = Blueprint("fetchjobs", __name__)
+_last_search: dict[str, float] = {}
 
 
 @dataclass
@@ -34,6 +39,7 @@ class Job:
     percent: int = 0
     scene: dict | None = None
     error: str | None = None
+    scene_id: str | None = None  # a particular scene the user chose (otherwise: the newest suitable one)
     started: float = field(default_factory=time.monotonic)
 
 
@@ -45,7 +51,7 @@ class JobStore:
     def running(self) -> list[Job]:
         return [j for j in self.jobs.values() if j.state == "running"]
 
-    def start(self, session, bbox, wanted, data_dir: Path, run=None) -> Job:
+    def start(self, session, bbox, wanted, data_dir: Path, run=None, scene_id: str | None = None) -> Job:
         """Create a job and run it in a thread. Raises RuntimeError with a user-facing reason if it may not start."""
         with self.lock:
             now = time.monotonic()
@@ -55,7 +61,7 @@ class JobStore:
                 raise RuntimeError("A scene is already being fetched for this session.")
             if len(self.running()) >= MAX_RUNNING:
                 raise RuntimeError("The server is busy fetching other scenes; try again in a minute.")
-            job = Job(uuid.uuid4().hex, session.sid)
+            job = Job(uuid.uuid4().hex, session.sid, scene_id=scene_id)
             self.jobs[job.id] = job
         threading.Thread(target=run or _run, args=(job, session, bbox, wanted, data_dir), name="fetch-" + job.id[:6],
                          daemon=True).start()
@@ -73,7 +79,8 @@ def _run(job: Job, session, bbox, wanted, data_dir: Path) -> None:
 
     try:
         with session.lock:  # one Bhoonidhi operation at a time per session
-            scene = live_fetch.ensure_scene(bbox, wanted, fetch_dir(data_dir), progress=progress, client=session.client)
+            scene = live_fetch.ensure_scene(bbox, wanted, fetch_dir(data_dir), progress=progress, client=session.client,
+                                            scene_id=job.scene_id)
         job.scene = {"id": scene.scene_id, "date": scene.date.date().isoformat()}
         job.message, job.percent, job.state = "Scene ready", 100, "done"
     except BhoonidhiError as e:
@@ -111,11 +118,52 @@ def api_fetch():
     bbox = (minx, miny, maxx, maxy)
     if _approx_pixels(bbox) > MAX_PIXELS:
         return _fail("That area is larger than this service handles in one request.", 400)
+    scene_id = body.get("scene_id")
+    if scene_id is not None and not (isinstance(scene_id, str) and SCENE_ID_RE.fullmatch(scene_id)):
+        return _fail("Invalid scene id.", 400)
     try:
-        job = jobs.start(session, bbox, wanted, DATA_DIR)
+        job = jobs.start(session, bbox, wanted, DATA_DIR, scene_id=scene_id)
     except RuntimeError as e:
         return _fail(str(e), 409)
     return jsonify(_view(job)), 202
+
+
+@bp.route("/api/scenes", methods=["POST"])
+def api_scenes():
+    """List the Bhoonidhi scenes that cover the area, so the user can choose a date instead of taking the newest."""
+    from app.processes.ndvi import MAX_PIXELS, _approx_pixels
+
+    if not enabled():
+        return _fail("Fetching from Bhoonidhi is disabled on this instance.", 403)
+    if request.headers.get("X-Requested-With") != "XMLHttpRequest" or not request.is_json:
+        return _fail("Bad request.", 400)
+    session = current_session()
+    if not session or session.state != "ready":
+        return _fail("Log in to Bhoonidhi first.", 401)
+    body = request.get_json(silent=True) or {}
+    try:
+        miny, minx, maxy, maxx = (float(v) for v in body["bbox"])
+        days = int(body.get("days", 180))
+    except (KeyError, TypeError, ValueError):
+        return _fail("Send bbox as [minlat, minlon, maxlat, maxlon] and optionally days.", 400)
+    if not (-90 <= miny < maxy <= 90 and -180 <= minx < maxx <= 180):
+        return _fail("Invalid area.", 400)
+    bbox = (minx, miny, maxx, maxy)
+    if _approx_pixels(bbox) > MAX_PIXELS:
+        return _fail("That area is larger than this service handles in one request.", 400)
+    now = time.monotonic()
+    if now - _last_search.get(session.sid, -1e9) < SEARCH_COOLDOWN_S:
+        return _fail("Please wait a few seconds before searching again.", 429)
+    _last_search[session.sid] = now
+    try:
+        with session.lock:
+            scenes = live_fetch.list_scenes(session.client, bbox, days)
+    except BhoonidhiError as e:
+        return _fail(str(e), 502)
+    except Exception as e:
+        LOGGER.error("scene listing failed: %s", type(e).__name__)
+        return _fail("Searching Bhoonidhi failed unexpectedly.", 502)
+    return jsonify({"scenes": scenes, "days": max(1, min(days, live_fetch.MAX_LIST_DAYS))})
 
 
 @bp.route("/api/fetch/<job_id>")
