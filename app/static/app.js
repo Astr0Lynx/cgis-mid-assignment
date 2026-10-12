@@ -98,7 +98,7 @@
       dinfo.className = 'meta';
       dinfo.textContent = `${cover.length} prepared scene${cover.length > 1 ? 's' : ''} cover${cover.length > 1 ? '' : 's'} this area.`;
     }
-    $('run').disabled = !ok;
+    setRunDisabled(!ok);
   }
   function startDrawing() {
     drawing = true; cornerA = null; $('draw').classList.add('active');
@@ -129,9 +129,53 @@
     if (rect) { rect.remove(); rect = null; }
     if (overlay) { overlay.remove(); overlay = null; }
     resultUrls.forEach((u) => URL.revokeObjectURL(u)); resultUrls = [];
-    bbox = null; $('result').hidden = true; $('run').disabled = true;
+    bbox = null; $('result').hidden = true; setRunDisabled(true);
     $('bbox-info').className = 'meta'; $('bbox-info').textContent = 'No area selected.';
     $('date').innerHTML = '<option>Draw an area first</option>'; $('date').disabled = true; $('date-info').textContent = '';
+  }
+
+  function setRunDisabled(v) { $('run').disabled = v; $('op-exec').disabled = v; }
+
+  // ---------- the three OGC operations, each as a request of its own ----------
+  let shownUrl = null;
+  function showRequest(url) {
+    shownUrl = location.origin + url;
+    $('ogc-url').textContent = `GET ${shownUrl}\n\ncurl "${shownUrl}"`;
+    $('ogc-open').href = url;
+    $('ogc-actions').hidden = false;
+    $('ogc').open = true;
+  }
+  async function operation(kind, button) {
+    const url = kind === 'caps' ? '/wps?service=WPS&request=GetCapabilities'
+      : `/wps?service=WPS&version=1.0.0&request=DescribeProcess&identifier=${encodeURIComponent($('op-process').value)}`;
+    showRequest(url);
+    const box = $('ogc-response'); box.hidden = false; box.textContent = 'Waiting for the service…';
+    button.classList.add('busy'); button.disabled = true;
+    const t0 = performance.now();
+    try {
+      const resp = await fetch(url);
+      const text = await resp.text();
+      const secs = ((performance.now() - t0) / 1000).toFixed(2);
+      const LIMIT = 60000;
+      box.textContent = `HTTP ${resp.status} · ${(text.length / 1024).toFixed(1)} kB · ${secs} s\n\n` + text.slice(0, LIMIT)
+        + (text.length > LIMIT ? '\n… (shortened here; "Open in a new tab" shows all of it)' : '');
+      box.scrollTop = 0;
+      setStatus(`${kind === 'caps' ? 'GetCapabilities' : 'DescribeProcess'} reply received (see "The request and reply" below).`, 'ok');
+      box.scrollIntoView({ block: 'nearest' });
+    } catch (err) {
+      box.textContent = 'Could not reach the service: ' + err.message;
+      setStatus('Error: ' + err.message, 'err');
+    } finally {
+      button.classList.remove('busy'); button.disabled = false;
+    }
+  }
+  async function copyCurl(ev) {
+    ev.preventDefault();
+    if (!shownUrl) return;
+    const link = $('ogc-copy'), old = link.textContent;
+    try { await navigator.clipboard.writeText(`curl "${shownUrl}"`); link.textContent = 'Copied'; }
+    catch (e) { link.textContent = 'Copy not allowed here'; }
+    setTimeout(() => { link.textContent = old; }, 1500);
   }
 
   // ---------- running the WPS process ----------
@@ -159,15 +203,15 @@
   }
   async function run() {
     if (!bbox) return;
-    $('run').disabled = true; $('result').hidden = true;
+    setRunDisabled(true); $('result').hidden = true;
     let date = $('date').value;
     if (date === FETCH) {
       date = await fetchFlow();  // logs in if needed, fetches the scene, returns its date (null if cancelled or failed)
       if (!date) { refreshRunButton(); return; }
     }
     const index = $('index').value, url = executeUrl(index, date);
-    $('ogc-url').textContent = `GET ${location.origin}${url}\n\ncurl "${location.origin}${url}"`;
-    $('ogc').open = true;
+    showRequest(url);
+    $('ogc-response').hidden = true;
     setStatus('Sending the WPS Execute request and computing…', 'busy');
     const t0 = performance.now();
     try {
@@ -184,7 +228,7 @@
       refreshRunButton();
     }
   }
-  function refreshRunButton() { $('run').disabled = !(bbox && !$('date').disabled); }
+  function refreshRunButton() { setRunDisabled(!(bbox && !$('date').disabled)); }
   function showResult(out, stats, xmlText) {
     const pv = stats.preview, b = pv.bounds_south_west_north_east;
     if (overlay) overlay.remove();
@@ -342,6 +386,10 @@
     $('demo').addEventListener('click', () => { setBbox(DEMO); map.fitBounds(rect.getBounds().pad(0.6)); });
     $('clear').addEventListener('click', clearAll);
     $('run').addEventListener('click', run);
+    $('op-caps').addEventListener('click', (e) => operation('caps', e.currentTarget));
+    $('op-describe').addEventListener('click', (e) => operation('describe', e.currentTarget));
+    $('op-exec').addEventListener('click', run);
+    $('ogc-copy').addEventListener('click', copyCurl);
     $('login-form').addEventListener('submit', submitLogin);
     $('login-cancel').addEventListener('click', () => closeLogin(false));
     $('login').addEventListener('cancel', () => closeLogin(false));  // Escape

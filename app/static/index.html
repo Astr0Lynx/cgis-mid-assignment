@@ -60,14 +60,26 @@
       <p class="links" id="links"></p>
     </section>
 
+    <section id="ops">
+      <h2><span class="step">4</span> OGC operations</h2>
+      <p class="meta">The three WPS operations, each a separate request you can send yourself. The page shows the exact request and the service's reply.</p>
+      <div class="ops-grid">
+        <button id="op-caps" class="btn op" type="button"><b>GetCapabilities</b><span>What does the service offer?</span></button>
+        <button id="op-describe" class="btn op" type="button"><b>DescribeProcess</b><span>Inputs and outputs of a process</span></button>
+        <button id="op-exec" class="btn op" type="button" disabled><b>Execute</b><span>Run it for the area chosen above</span></button>
+      </div>
+      <label class="meta" for="op-process">Process for DescribeProcess
+        <select id="op-process"><option value="spectral-index">spectral-index</option><option value="ndvi">ndvi</option></select></label>
+    </section>
+
     <details id="ogc">
-      <summary>The WPS request behind this</summary>
-      <p class="meta">Everything this page does is an ordinary OGC WPS 1.0.0 request, so any WPS client can do the same.</p>
-      <pre id="ogc-url">Run a process to see the request.</pre>
-      <p class="links">
-        <a href="/wps?service=WPS&request=GetCapabilities" target="_blank" rel="noopener">GetCapabilities</a> ·
-        <a href="/wps?service=WPS&version=1.0.0&request=DescribeProcess&identifier=spectral-index" target="_blank" rel="noopener">DescribeProcess</a>
+      <summary>The request and reply</summary>
+      <pre id="ogc-url">Press one of the operation buttons, or Run, to see the request.</pre>
+      <p class="links" id="ogc-actions" hidden>
+        <a id="ogc-open" href="#" target="_blank" rel="noopener">Open in a new tab</a> ·
+        <a id="ogc-copy" href="#">Copy as curl</a>
       </p>
+      <pre id="ogc-response" class="reply" hidden></pre>
     </details>
 
     <footer>

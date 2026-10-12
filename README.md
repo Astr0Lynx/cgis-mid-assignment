@@ -83,7 +83,9 @@ Endpoint (local): `http://localhost:5000/wps`
 ### Interactive map page
 `/` serves a small web page (Leaflet, vendored, no CDN): draw an area on the map (the prepared scenes are outlined),
 pick a scene date and an index, press **Run WPS process**, and the result is overlaid with a legend, statistics, download
-links and the exact WPS `Execute` request that was sent. Light and dark modes are supported. The page computes nothing
+links and the exact WPS `Execute` request that was sent. An **OGC operations** section has a button for each of the three
+operations (**GetCapabilities**, **DescribeProcess** with a process choice, and **Execute**); each shows the exact request
+and the service's reply in the page, with "Open in a new tab" and "Copy as curl". Light and dark modes are supported. The page computes nothing
 itself: every result comes from an ordinary WPS request, so any WPS client can do the same. Helper endpoints feed it:
 `/api/info` (indices and limits) and `/api/coverage` (outlines of the data actually available: the footprint intersected with
 the pixels on disk, so the outline never claims more than a request can use).
