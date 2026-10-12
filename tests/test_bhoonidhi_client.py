@@ -611,3 +611,21 @@ def test_a_429_from_bhoonidhi_is_explained_with_the_wait_it_asks_for(tmp_path):
         client.portal_search(BBOX, item().date, [item().collection])
     text = str(e.value)
     assert "limiting requests from this server" in text and "retry after 120 seconds" in text and "per server address" in text
+
+
+def test_every_request_is_logged_with_its_answer_and_never_with_a_secret(tmp_path, caplog):
+    import logging
+
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    client = portal_client(api)
+    with caplog.at_level(logging.INFO, logger="bhoonidhi"):
+        client.portal_login()
+        client.find_portal_record(item(), BBOX)
+        api.portal_search_status = 429
+        with pytest.raises(BhoonidhiError):
+            client.portal_search(BBOX, item().date, [item().collection])
+    text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "portal-login(" in text and "portal-search /bhoonidhi/ProductSearch -> 200" in text
+    assert "-> 429" in text and "retry-after=120" in text and "Too many requests" in text   # the reply is recorded for diagnosis
+    assert "correct-horse" not in text and "token=" not in text and "?" not in text.replace("?'", "")   # no password, token or query string
+    assert any(r.levelno == logging.WARNING and "-> 429" in r.getMessage() for r in caplog.records)  # refusals stand out

@@ -14,6 +14,7 @@ Facts taken from the specification, and what this code does about them:
   The credentials are read from the environment by the caller and are never logged or put in error messages.
 """
 import json
+import logging
 import re
 import shutil
 import time
@@ -44,6 +45,7 @@ PORTAL_SEARCH_PATH = "/bhoonidhi/ProductSearch"  # the portal's own search; it r
 # are used as they are
 PORTAL_SENSOR_CODES = {("R2A", "LIS3"): "3", ("RS2", "LIS3"): "3", ("R2A", "LIS4"): "F", ("RS2", "LIS4"): "F",
                        ("R2A", "AWIF"): "W", ("RS2", "AWIF"): "W"}
+LOGGER = logging.getLogger("bhoonidhi.client")
 PORTAL_RECORD_FIELDS = ("ID", "SATELLITE", "SENSOR", "SELECTION", "DIRPATH", "FILENAME", "PRICED", "TABLETYPE")
 MONTHS = ("JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC")  # the portal names months, not numbers
 PORTAL_LOGIN_PATH = "/bhoonidhi/LoginServlet"  # the portal's own login, separate from the official API login
@@ -144,11 +146,31 @@ class BhoonidhiClient:
 
     # ---- authentication ------------------------------------------------------------------------------------
 
+    def _trace(self, step: str, url: str, status, started: float, r=None) -> None:
+        """Log one request to Bhoonidhi: step, path only (no query string, token or body), HTTP status, milliseconds.
+
+        For a refusal (429 and other errors) also the Retry-After header and the first words of the reply, scrubbed of secrets,
+        so a failure can be diagnosed from the server log without anyone having to copy an error message.
+        """
+        ms = int((self._clock() - started) * 1000)
+        line = f"{step} {urlsplit(url).path} -> {status} {ms}ms"
+        if r is not None and isinstance(status, int) and status >= 400:
+            after = (r.headers or {}).get("Retry-After")
+            try:
+                said = self._scrub(" ".join(str(r.text)[:120].split()))
+            except Exception:
+                said = ""
+            line += (f" retry-after={after}" if after else "") + (f" reply={said!r}" if said else "")
+        (LOGGER.warning if isinstance(status, int) and status >= 400 else LOGGER.info)(line)
+
     def _token_request(self, body: dict) -> None:
+        started = self._clock()
         try:
             r = self.session.request("POST", f"{self.base_url}/auth/token", json=body, timeout=30)
         except requests.RequestException as e:
+            LOGGER.warning("api-login failed: %s", type(e).__name__)
             raise BhoonidhiError(f"could not reach Bhoonidhi to authenticate: {type(e).__name__}") from None
+        self._trace("api-login(" + str(body.get("grant_type")) + ")", f"{self.base_url}/auth/token", r.status_code, started, r)
         if r.status_code != 200:
             reason = AUTH_ERRORS.get(r.status_code, f"HTTP {r.status_code}")
             raise BhoonidhiError(f"Bhoonidhi authentication failed: {reason}")
@@ -177,10 +199,13 @@ class BhoonidhiClient:
         """Authenticated request; one transparent re-login if the server says the session expired."""
         for attempt in (1, 2):
             headers = {"Authorization": f"Bearer {self._ensure_token()}"}
+            started = self._clock()
             try:
                 r = self.session.request(method, f"{self.base_url}{path}", headers=headers, **kwargs)
             except requests.RequestException as e:
+                LOGGER.warning("api %s %s failed: %s", method, path, type(e).__name__)
                 raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
+            self._trace(f"api {method}", f"{self.base_url}{path}", r.status_code, started, r)
             if r.status_code == 401 and attempt == 1:
                 self._access, self._expires_at = None, 0.0
                 continue
@@ -271,9 +296,11 @@ class BhoonidhiClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json",
                    "X-Requested-With": "XMLHttpRequest", "Origin": self.portal_url,
                    "Referer": f"{self.portal_url}/bhoonidhi/login.html"}
+        started = self._clock()
         try:
             r = self.session.request("POST", f"{self.portal_url}{PORTAL_LOGIN_PATH}", data=json.dumps(body),
                                      headers=headers, timeout=30)
+            self._trace("portal-login(" + str(body.get("action")) + ")", f"{self.portal_url}{PORTAL_LOGIN_PATH}", r.status_code, started, r)
         except requests.RequestException as e:
             raise BhoonidhiError(f"could not reach the Bhoonidhi portal to log in: {type(e).__name__}") from None
         if r.status_code != 200:
@@ -365,9 +392,11 @@ class BhoonidhiClient:
         }
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         self._portal_pause()
+        started = self._clock()
         try:
             r = self.session.request("POST", f"{self.portal_url}{PORTAL_SEARCH_PATH}", json=payload, headers=headers,
                                      timeout=(10, 60))
+            self._trace("portal-search", f"{self.portal_url}{PORTAL_SEARCH_PATH}", r.status_code, started, r)
             if r.status_code in (401, 403) and self._portal_jwt:  # some deployments want the session token here
                 r = self.session.request("POST", f"{self.portal_url}{PORTAL_SEARCH_PATH}", json=payload,
                                          headers={**headers, "token": self._portal_jwt}, timeout=(10, 60))
@@ -483,8 +512,11 @@ class BhoonidhiClient:
     def _portal_get(self, url: str, item: Item, **kwargs):
         token = self._portal_token()  # the portal rejects the official API's token ("permission denied")
         self._portal_pause()
+        started = self._clock()
         try:
-            return self.session.request("GET", url, params={"token": token, "product_id": item.id}, **kwargs)
+            r = self.session.request("GET", url, params={"token": token, "product_id": item.id}, **kwargs)
+            self._trace("portal-data", url, r.status_code, started, r if r.status_code >= 400 else None)
+            return r
         except requests.RequestException as e:
             raise BhoonidhiError(f"request to Bhoonidhi failed: {type(e).__name__}") from None
 

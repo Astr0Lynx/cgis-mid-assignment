@@ -84,6 +84,7 @@ def _run(job: Job, session, bbox, wanted, data_dir: Path) -> None:
         job.scene = {"id": scene.scene_id, "date": scene.date.date().isoformat()}
         job.message, job.percent, job.state = "Scene ready", 100, "done"
     except BhoonidhiError as e:
+        LOGGER.warning("fetch job %s (scene_id=%s, wanted=%s) failed: %s", job.id[:6], job.scene_id, wanted, e)
         job.error, job.state = str(e), "error"
     except Exception as e:  # never show an unexpected error's text (it could echo request details)
         LOGGER.error("fetch job failed: %s", type(e).__name__)
@@ -167,6 +168,7 @@ def api_scenes():
         with session.lock:
             listing = live_fetch.list_scenes(session.client, bbox, start, end)
     except BhoonidhiError as e:
+        LOGGER.warning("scene listing refused for %s..%s: %s", start, end, e)
         return _fail(str(e), 502)
     except Exception as e:
         LOGGER.error("scene listing failed: %s", type(e).__name__)

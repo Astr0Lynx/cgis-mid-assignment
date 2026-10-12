@@ -1,5 +1,6 @@
 """Flask wrapper serving the PyWPS service at /wps and async outputs at /outputs."""
 import io
+import logging
 import os
 from pathlib import Path
 
@@ -16,6 +17,16 @@ from app.cleanup import purge_fetched, start_background_purge, start_periodic
 from app.fetchjobs import bp as fetchjobs_bp
 from app.webauth import bp as webauth_bp
 from app.processes.ndvi import Ndvi, SpectralIndex
+
+# Requests to Bhoonidhi and the outcome of fetch jobs are logged (paths and statuses only, never tokens, passwords or query strings),
+# so a failure can be diagnosed from `docker logs` without anyone copying an error message.
+_bn_log = logging.getLogger("bhoonidhi")
+if not _bn_log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    _bn_log.addHandler(_handler)
+    _bn_log.setLevel(logging.INFO)
+    _bn_log.propagate = False
 
 ROOT = Path(__file__).resolve().parent.parent
 BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5000").rstrip("/")
