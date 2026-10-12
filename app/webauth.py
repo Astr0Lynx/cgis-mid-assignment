@@ -21,6 +21,7 @@ from app.bhoonidhi_client import BhoonidhiClient, BhoonidhiError
 
 IDLE_SECONDS = 30 * 60
 MAX_SECONDS = 2 * 60 * 60
+OTP_WAIT_SECONDS = 10 * 60  # a login that never got its emailed code is dropped, so the user can start over
 LOGIN_ATTEMPTS = (10, 60)  # at most 10 login/code attempts per client address per minute
 COOKIE = "sid"
 
@@ -66,12 +67,17 @@ class SessionStore:
         now = _clock()
         with self._lock:
             s = self._sessions.get(sid)
-            if s and (now - s.touched > IDLE_SECONDS or now - s.created > MAX_SECONDS):
+            if s and self._expired(s, now):
                 self._drop_locked(sid)
                 return None
             if s:
                 s.touched = now
             return s
+
+    @staticmethod
+    def _expired(s: "WebSession", now: float) -> bool:
+        return (now - s.touched > IDLE_SECONDS or now - s.created > MAX_SECONDS
+                or (s.state == "otp" and now - s.created > OTP_WAIT_SECONDS))
 
     def drop(self, sid: str | None) -> None:
         with self._lock:
@@ -84,7 +90,7 @@ class SessionStore:
 
     def _sweep(self, now: float) -> None:
         for sid, s in list(self._sessions.items()):
-            if now - s.touched > IDLE_SECONDS or now - s.created > MAX_SECONDS:
+            if self._expired(s, now):
                 self._drop_locked(sid)
 
     def allow_attempt(self, who: str) -> bool:

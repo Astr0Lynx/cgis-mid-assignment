@@ -112,3 +112,5 @@ body.resizing #map { pointer-events: none; }
 #scene-search .dates input { display: block; width: 100%; box-sizing: border-box; margin-top: 3px; font: inherit; padding: 5px 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); color-scheme: light dark; }
 #scene-search .presets { display: flex; flex-wrap: wrap; gap: 4px; margin: 8px 0; }
 #scene-search #scene-find { width: 100%; }
+
+.linklike { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; }

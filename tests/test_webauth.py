@@ -146,3 +146,32 @@ def test_rate_limit_uses_the_real_client_address_only_behind_a_trusted_proxy(web
     monkeypatch.setenv("TRUST_PROXY", "1")
     assert 429 in attempts(12, "1.1.1.1")                 # one real visitor is limited...
     assert 429 not in attempts(1, "spoof, 2.2.2.2")       # ...another is not (the proxy's entry is the last one)
+
+
+def test_a_login_still_waiting_for_its_code_expires_so_the_user_can_start_over(web):
+    c, api, clock = web
+    api.portal_otp = True
+    assert post(c, "/api/login", CREDS).get_json() == {"status": "otp_required"}
+    assert c.get("/api/session").get_json()["otp_pending"] is True          # e.g. the page was closed or the PC restarted
+    clock["now"] += webauth.OTP_WAIT_SECONDS - 1
+    assert c.get("/api/session").get_json()["otp_pending"] is True          # still within the time the code is good for
+    clock["now"] += 2
+    s = c.get("/api/session").get_json()
+    assert s["otp_pending"] is False and s["logged_in"] is False             # dropped: the page asks for the credentials again
+    assert post(c, "/api/login", CREDS).get_json() == {"status": "otp_required"}   # and a fresh login works
+
+
+def test_starting_over_discards_the_pending_login_at_once(web):
+    c, api, _ = web
+    api.portal_otp = True
+    post(c, "/api/login", CREDS)
+    assert c.get("/api/session").get_json()["otp_pending"] is True
+    assert post(c, "/api/logout").status_code == 200
+    assert c.get("/api/session").get_json()["otp_pending"] is False
+
+
+def test_a_logged_in_session_is_not_cut_short_by_the_code_wait_limit(web):
+    c, api, clock = web
+    assert post(c, "/api/login", CREDS).get_json() == {"status": "ready"}
+    clock["now"] += webauth.OTP_WAIT_SECONDS + 60                           # the limit only applies to a login awaiting its code
+    assert c.get("/api/session").get_json()["logged_in"] is True

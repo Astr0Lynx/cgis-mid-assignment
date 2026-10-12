@@ -484,6 +484,11 @@
     finally { $('login-go').disabled = false; }
   }
   async function logout() { await api('/api/logout'); await loadAccount(); }
+  async function restartLogin() {  // discard a half-finished login (the code step) and ask for the credentials again
+    $('login-error').textContent = '';
+    await api('/api/logout'); await loadAccount();
+    openLogin();
+  }
 
   async function reloadCoverage() {
     scenes = await fetch('/api/coverage').then((r) => r.json()).then((c) => c.features);
@@ -627,6 +632,7 @@
     $('ogc-copy').addEventListener('click', copyCurl);
     $('login-form').addEventListener('submit', submitLogin);
     $('login-cancel').addEventListener('click', () => closeLogin(false));
+    $('login-restart').addEventListener('click', restartLogin);
     $('login').addEventListener('cancel', () => closeLogin(false));  // Escape
     $('account-btn').addEventListener('click', () => (account.logged_in ? logout() : (loginDone = null, openLogin())));
     await loadAccount();

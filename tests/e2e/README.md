@@ -22,3 +22,8 @@ mark; the tilted one cannot be chosen; Run fetches exactly the chosen date and s
 `tests/e2e`) checks the saved-layers list: each run is kept, selecting a layer shows its own details and download links,
 visibility, per-layer opacity, reordering, renaming, duplicate requests, "Clear" keeping the layers, map-click selection,
 removing one and removing all.
+
+## A login abandoned at the code step
+`BASE=http://localhost:5058 node pending_code.js` against `python scripts/dev_fake_bhoonidhi.py 5058`: enter the password, leave at the
+code step, reopen the page (the browser keeps its cookie) and check the dialog offers **Start over**, which returns to the user id
+and password. On the server a login waiting for its code also expires after 10 minutes (`OTP_WAIT_SECONDS`).
