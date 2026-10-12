@@ -234,6 +234,8 @@ class BhoonidhiClient:
         r = self._call("POST", "/data/search", json=body, timeout=60)
         if r.status_code == 429:
             raise BhoonidhiError(self._limited(r))
+        if r.status_code == 404 and "NO RESULTS" in str(r.text).upper():
+            return []  # Bhoonidhi answers an empty search with 404 NO RESULTS FOUND: nothing matched, which is not an error
         if r.status_code != 200:
             raise BhoonidhiError(f"Bhoonidhi search failed: HTTP {r.status_code} {self._describe(r)}")
         items = []

@@ -24,7 +24,7 @@ MAX_RUNNING = 2  # fetches at once across all sessions (each is a ~140 MB downlo
 KEEP_FINISHED_S = 3600
 
 SCENE_ID_RE = re.compile(r"[A-Za-z0-9_]{8,80}")
-SEARCH_COOLDOWN_S = 4  # per session: a listing makes several requests to Bhoonidhi
+SEARCH_COOLDOWN_S = 2  # per session: a listing makes several requests to Bhoonidhi
 
 bp = Blueprint("fetchjobs", __name__)
 _last_search: dict[str, float] = {}
@@ -161,8 +161,10 @@ def api_scenes():
     if _approx_pixels(bbox) > MAX_PIXELS:
         return _fail("That area is larger than this service handles in one request.", 400)
     now = time.monotonic()
-    if now - _last_search.get(session.sid, -1e9) < SEARCH_COOLDOWN_S:
-        return _fail("Please wait a few seconds before searching again.", 429)
+    since = now - _last_search.get(session.sid, -1e9)
+    if since < SEARCH_COOLDOWN_S:
+        return _fail(f"This service spaces searches out: try again in {max(1, round(SEARCH_COOLDOWN_S - since))} second(s). "
+                     "(This is not Bhoonidhi's limit.)", 429)
     _last_search[session.sid] = now
     try:
         with session.lock:

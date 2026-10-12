@@ -162,6 +162,9 @@ class FakeBhoonidhi:
                 lo, hi = (_date.fromisoformat(part[:10]) for part in window.split("/"))
                 features = [f for f in features if (d := date_from_id(f["id"])) is not None and lo <= d <= hi]
                 self.search_windows.append((lo, hi))
+            if self.filter_dates and not features:  # what the real API sends when nothing matches (seen in the server log)
+                return FakeResponse(404, {"ErrorCode": "404", "Description": "NO RESULTS FOUND",
+                                          "Action": "No results found. Please modify the inputs and try again."})
             return FakeResponse(200, {"type": "FeatureCollection", "features": features,
                                       "context": {"limit": 100, "returned": len(features)}})
         if path == "/download":
