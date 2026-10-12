@@ -351,6 +351,44 @@
     }
   }
 
+  // ---------- resizable side panel ----------
+  function initSplitter() {
+    const bar = $('splitter'), app = $('app'), DEFAULT = 360;
+    const limits = () => [260, Math.max(320, Math.min(760, Math.round(app.clientWidth * 0.7)))];
+    const apply = (w, save) => {
+      const [lo, hi] = limits();
+      w = Math.min(hi, Math.max(lo, Math.round(w)));
+      document.documentElement.style.setProperty('--panel-w', w + 'px');
+      bar.setAttribute('aria-valuenow', String(w));
+      map.invalidateSize();
+      if (save) { try { localStorage.setItem('panelWidth', String(w)); } catch (e) { /* storage may be blocked */ } }
+      return w;
+    };
+    try { const saved = parseInt(localStorage.getItem('panelWidth'), 10); if (saved) apply(saved, false); } catch (e) { /* ignore */ }
+    let dragging = false;
+    bar.addEventListener('pointerdown', (e) => { dragging = true; bar.setPointerCapture(e.pointerId); document.body.classList.add('resizing'); e.preventDefault(); });
+    bar.addEventListener('pointermove', (e) => { if (dragging) apply(e.clientX - app.getBoundingClientRect().left, false); });
+    let lastTap = 0, moved = false;  // pointerdown is cancelled above, so dblclick is not reliable: detect two quick taps ourselves
+    bar.addEventListener('pointermove', () => { if (dragging) moved = true; });
+    const stop = (e) => {
+      if (!dragging) return;
+      dragging = false; document.body.classList.remove('resizing');
+      try { bar.releasePointerCapture(e.pointerId); } catch (err) { /* already released */ }
+      const now = Date.now();
+      if (!moved && now - lastTap < 450) { lastTap = 0; apply(DEFAULT, true); return; }
+      lastTap = moved ? 0 : now; moved = false;
+      apply($('panel').getBoundingClientRect().width, true);
+    };
+    bar.addEventListener('pointerup', stop); bar.addEventListener('pointercancel', stop);
+    bar.addEventListener('keydown', (e) => {
+      const step = e.shiftKey ? 60 : 20, w = $('panel').getBoundingClientRect().width;
+      if (e.key === 'ArrowLeft') { apply(w - step, true); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { apply(w + step, true); e.preventDefault(); }
+      if (e.key === 'Home') { apply(DEFAULT, true); e.preventDefault(); }
+    });
+    window.addEventListener('resize', () => apply($('panel').getBoundingClientRect().width, false));
+  }
+
   // ---------- start-up ----------
   function showIndexInfo() {
     const i = info.indices.find((x) => x.name === $('index').value);
@@ -365,6 +403,7 @@
     } catch (e) { setStatus('Could not reach the service: ' + e.message, 'err'); return; }
 
     map = L.map('map', { zoomControl: true }).setView([17.4, 78.45], 9);
+    initSplitter();
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(map);
     applyTheme(document.documentElement.dataset.theme);
     $('theme').addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));

@@ -15,7 +15,7 @@ h1 { padding-right: 96px; }
 html, body { height: 100%; margin: 0; }
 body { font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink); }
 #app { display: flex; height: 100%; }
-#panel { width: 360px; max-width: 100%; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 16px; background: var(--panel);
+#panel { width: var(--panel-w, 360px); max-width: 100%; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 16px; background: var(--panel);
          border-right: 1px solid var(--line); flex: none; }
 #map { flex: 1; min-width: 0; }
 h1 { font-size: 19px; margin: 0 0 4px; }
@@ -54,6 +54,7 @@ footer { margin-top: 20px; font-size: 11.5px; color: var(--muted); }
 #map.dark-tiles .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.92) contrast(.9) saturate(.8); }
 .scene-label { background: transparent; border: 0; box-shadow: none; color: #1f2933; font-weight: 600; font-size: 11px; text-shadow: 0 0 3px #fff; }
 @media (max-width: 760px) {
+  #splitter { display: none; }
   #app { flex-direction: column-reverse; }
   #panel { width: 100%; max-height: 55%; border-right: 0; border-top: 1px solid var(--line); }
   #map { min-height: 45%; }
@@ -77,3 +78,9 @@ dialog .btn.primary { width: auto; margin: 0; padding: 7px 16px; }
 .btn.op.busy { opacity: .6; }
 #op-process { font: inherit; margin-left: 6px; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
 pre.reply { max-height: 320px; overflow: auto; white-space: pre; word-break: normal; font-size: 11.5px; }
+
+#splitter { flex: none; width: 7px; margin-left: -4px; margin-right: -3px; cursor: col-resize; position: relative; z-index: 1000; touch-action: none; }
+#splitter::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; background: transparent; transition: background .15s; }
+#splitter:hover::after, #splitter:focus-visible::after, body.resizing #splitter::after { background: var(--accent); }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing #map { pointer-events: none; }
