@@ -25,6 +25,8 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 
 - DONE (2026-10-12): the user can list the Bhoonidhi scenes over the drawn area (`/api/scenes`, with a true-footprint check for the newest ten) and fetch a chosen date or scene instead of only the newest. Any From/To range back to 2011 works (year-long search windows, newest first, newest 40 listed).
 
+- DONE (2026-10-12): rough cloud/haze hint (`app/clouds.py`, `cloud_hint` in the statistics, a warning on the layer). Open: a real cloud mask, and checking the 15 mW/cm2/sr/um limit on more scenes.
+
 ## 2. Expand beyond NDVI  (STATUS: DONE for NDVI/NDWI/MNDWI/NDBI via process `spectral-index`)
 - DONE: registry in `app/indices.py`, process `spectral-index`, tests incl. a real-data lake check. Decided NOT to wait for TOA.
 - STILL TO DO: SAVI (only valid on reflectance; add once `radiometry=toa` is unblocked), then document that thresholds become usable.

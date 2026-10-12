@@ -18,6 +18,7 @@ from pywps.inout.literaltypes import AnyValue
 from app import live_fetch
 from app.bhoonidhi_client import BhoonidhiError
 from app.indices import INDICES
+from app import clouds
 from app.preview import SCALES, render_preview
 from app.radiometry import MODES, EsunNotConfigured
 from app.scene import ATTRIBUTION, DATA_DIR, find_scenes, write_cog
@@ -191,6 +192,7 @@ class IndexProcess(Process):
             "valid_fraction": float(valid.size / clip.data.size),
             "radiometry": mode,
             "attribution": ATTRIBUTION,
+            "cloud_hint": clouds.for_scene(scenes[0], bbox),
             "preview": {"bounds_south_west_north_east": list(pv.bounds), "vmin": pv.vmin, "vmax": pv.vmax,
                         "ramp": pv.ramp, "scale": colour_scale,
                         "note": ("fixed absolute scale -1..+1" if colour_scale == "absolute"

@@ -240,6 +240,17 @@
   function refreshRunButton() { setRunDisabled(!(bbox && !$('date').disabled)); }
   // ---------- saved layers: every result stays on the map until removed ----------
   const layerById = (id) => layers.find((l) => l.id === id);
+  // Only a hint: green-band brightness cannot tell cloud from bright ground, so the wording says "may".
+  function cloudText(stats) {
+    const h = stats.cloud_hint;
+    if (!h || h.level === 'none') return null;
+    const pct = Math.round(h.bright_share * 100);
+    return h.level === 'much'
+      ? { short: `Cloud or haze may cover much of this area (${pct}% very bright pixels)`,
+          long: `${pct}% of the pixels are far brighter in the green band than clear land usually is. Cloud or haze may be present, but this is a rough hint, not a cloud mask: bright ground can look the same.` }
+      : { short: `Cloud or haze may be present (${pct}% very bright pixels)`,
+          long: `${pct}% of the pixels are far brighter in the green band than clear land usually is. This is a rough hint, not a cloud mask: bright ground such as sand or roofs can look the same.` };
+  }
   const fileBase = (l) => l.name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || `layer_${l.id}`;
   function restack() { layers.forEach((l) => { if (l.visible) l.overlay.bringToFront(); }); }  // bottom first, so the last ends on top
   function addLayer(out, stats, xmlText, url) {
@@ -305,6 +316,8 @@
       top.append(eye, sw, nm);
       const sub = document.createElement('div'); sub.className = 'layer-sub';
       sub.textContent = `${l.stats.preview.scale === 'absolute' ? 'absolute scale' : 'relative contrast'} · ${fmt(l.stats.min)} to ${fmt(l.stats.max)}`;
+      const warn = cloudText(l.stats);
+      if (warn) { const w = document.createElement('div'); w.className = 'layer-warn'; w.textContent = '⚠ ' + warn.short; w.title = warn.long; sub.after(w); }
       const tools = document.createElement('div'); tools.className = 'layer-tools';
       const op = document.createElement('input'); op.type = 'range'; op.min = 0; op.max = 1; op.step = 0.05; op.value = l.opacity;
       op.title = 'Opacity'; op.setAttribute('aria-label', `Opacity of ${l.name}`);
@@ -348,6 +361,8 @@
       : 'Colours are a stretch between the 2nd and 98th percentile of this result: they show relative contrast, not absolute values. ')
       + (toa ? '(Values are top-of-atmosphere reflectance indices, without atmospheric correction.)'
              : '(Values are computed on at-sensor radiance, so standard thresholds such as NDWI > 0 for water do not strictly apply.)');
+    const cw = cloudText(stats), cn = $('cloud-note');
+    cn.hidden = !cw; if (cw) cn.textContent = '⚠ ' + cw.long;
     const t = $('stats'); t.innerHTML = '';
     row(t, 'Layer', l.name);
     row(t, 'Index', `${stats.index.toUpperCase()}  ${stats.formula}`);
@@ -421,6 +436,7 @@
       const usable = scenes.filter((s) => s.covers !== false).length;
       note.textContent = `${scenes.length} scene${scenes.length > 1 ? 's' : ''} on Bhoonidhi over this area between ${start} and ${end} (${usable} usable). `
         + (r.data.more ? 'Only the newest are listed: narrow the range to see older ones. ' : '')
+        + 'Cloud cover is not known before a scene is downloaded; the result flags scenes that look cloudy. '
         + 'Pick a date in the list above, then press Run. Each download is about 140 MB.';
       setStatus('');
     } catch (e) {

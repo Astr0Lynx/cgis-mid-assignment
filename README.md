@@ -329,7 +329,7 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   document, learnt from a third-party client, so it may change. The documented official `/download` was refused
   ("Invalid session detected") for every way of sending the token; the cause is unknown (possibly an account
   permission). The public instance never has credentials and does not log anyone in.
-- No cloud masking (cloud percentage is empty in the scene metadata); single-scene results, no mosaicking or
+- **No cloud masking, only a hint.** Bhoonidhi's cloud percentage is empty in the scene metadata, so the service cannot filter by it. Instead every result carries a rough `cloud_hint` in its statistics (and the page shows a warning on the layer): the share of pixels whose green-band radiance is far above anything clear land gave (more than 15 mW/cm2/sr/um), reported as "cloud or haze **may** be present" at 10% or more and "may cover much of the area" at 50% or more. It comes from six scenes: the clear ones had a mean green radiance of 3.9 to 7.8 and at most 5% of pixels above the limit, the overcast 12 Aug 2020 scene 23.4 and 94%. Bright ground (sand, roofs) can trigger it and thin cloud or haze can slip under it, so it is a warning, not a mask, and the index values themselves are never changed. The scene list cannot show it, because it needs the pixels; single-scene results, no mosaicking or
   time-series; scenes lie in different UTM zones (43N/44N), so combining them would need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
   (Hyderabad, 23 May): every pixel has a positive MNDWI (minimum 0.61) and the median NDBI is -0.66, most likely because the
