@@ -317,7 +317,8 @@
       const sub = document.createElement('div'); sub.className = 'layer-sub';
       sub.textContent = `${l.stats.preview.scale === 'absolute' ? 'absolute scale' : 'relative contrast'} · ${fmt(l.stats.min)} to ${fmt(l.stats.max)}`;
       const warn = cloudText(l.stats);
-      if (warn) { const w = document.createElement('div'); w.className = 'layer-warn'; w.textContent = '⚠ ' + warn.short; w.title = warn.long; sub.after(w); }
+      const warnEl = document.createElement('div'); warnEl.className = 'layer-warn'; warnEl.hidden = !warn;
+      if (warn) { warnEl.textContent = '⚠ ' + warn.short; warnEl.title = warn.long; }
       const tools = document.createElement('div'); tools.className = 'layer-tools';
       const op = document.createElement('input'); op.type = 'range'; op.min = 0; op.max = 1; op.step = 0.05; op.value = l.opacity;
       op.title = 'Opacity'; op.setAttribute('aria-label', `Opacity of ${l.name}`);
@@ -343,7 +344,7 @@
         a.addEventListener('click', (e) => e.stopPropagation());
         dl.append(a);
       });
-      li.append(top, sub, tools, dl);
+      li.append(top, sub, warnEl, tools, dl);
       li.addEventListener('click', () => selectLayer(l.id));
       ul.append(li);
     }
