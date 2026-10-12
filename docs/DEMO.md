@@ -94,7 +94,7 @@ image is tilted and had no data there, and it was refused."
 **Live fetch from the page (on the Azure instance, where login is switched on).** Open `https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/`.
 (A local copy also works: `BROWSER_LOGIN=1 PORT=5001 .venv/Scripts/python -m app.server`, then `http://127.0.0.1:5001/`.)
 Draw a box outside the outlined scenes (for example over Vijayawada or Warangal, inside a
-real Bhoonidhi scene), press **Find Bhoonidhi scenes** (or leave the date on "Newest scene on Bhoonidhi"), pick a date from the list, press **Run**. The dialog asks for your Bhoonidhi
+real Bhoonidhi scene), press **Find Bhoonidhi scenes** (or leave the date on "Newest scene on Bhoonidhi"), pick a date from the list (**choose a 2026 date**: Bhoonidhi refuses some 2021-2023 downloads, see README section 5), press **Run**. The dialog asks for your Bhoonidhi
 user id and password, then for the code Bhoonidhi emails you; type it in the page and the run continues by itself with a
 progress bar (about 140 MB). Say: "I only typed into this page and my mailbox; the server uses the password once to log in to Bhoonidhi and does not store it." Do this **once**, rehearsed,
 with a spare minute for the download; if the network is slow, show the same flow with the made-up archive instead:
@@ -118,11 +118,14 @@ EPSG:32643/32644; style it as singleband pseudocolor. Zoom to Hussain Sagar (17.
   Reflectance (`radiometry=toa`) is built but disabled until a cited solar-irradiance table is available.
 - The instance serves four prepared scenes around Hyderabad (18 and 23 May, 2 and 9 Oct 2026) and has no Bhoonidhi
   credentials of its own; anyone can log in with their own account on the page to fetch more (the server sees that password
-  while logging in, which is why the page says to use it only on an instance you trust). Fetching needs a person with a Bhoonidhi account (the emailed code), through the
-  page on a local instance or the script. The browser flow has been tested against a fake Bhoonidhi; say whether you have
-  tried it with your real account before the demo.
+  while logging in, which is why the page says to use it only on an instance you trust). Fetching needs a person with a
+  Bhoonidhi account (the emailed code). The page flow, the scene list by date and the downloads were verified with a real
+  account on 2026-10-11/12.
+- Bhoonidhi refuses some older (2021-2023) scene downloads with a "permission denied" page, for this account, from any address;
+  the page says so and marks the scene. 2020 and 2026 scenes download.
 - It is an unofficial service built on data from Bhoonidhi, not part of Bhoonidhi.
-- Four indices (NDVI, NDWI, MNDWI, NDBI); no SAVI/EVI, no cloud masking, one scene per answer.
+- Four indices (NDVI, NDWI, MNDWI, NDBI); no SAVI/EVI; no cloud masking, only a rough "cloud or haze may be present" warning
+  on a layer; one scene per answer.
 
 ## If something goes wrong
 | Symptom | Do this |
@@ -131,6 +134,8 @@ EPSG:32643/32644; style it as singleband pseudocolor. Zoom to Hussain Sagar (17.
 | The page shows a grey map with no streets | the browser cannot reach OpenStreetMap tiles (no internet); the WPS still works, use the terminal steps |
 | The page says it cannot reach the service | on the VM: `cd cgis-mid-assignment && sudo docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d` (SSH in with the key; see docs/AZURE.md) |
 | Browser certificate warning | the VM's address changed or Caddy could not renew; check `sudo docker compose -f deploy/docker-compose.yml logs caddy` |
+| "Permission denied" / "REFUSED this download" when fetching a scene | Bhoonidhi refuses that scene for the account: pick another date, preferably a 2026 one |
+| A message about too many attempts or requests | wait: the service allows 10 login/code attempts a minute, Bhoonidhi 20 logins an hour per server address |
 | Login says it is disabled | you are on the ngrok or laptop copy, where login is off by design |
 | Async stays on `ProcessAccepted` | `sudo docker compose -f deploy/docker-compose.yml logs app` on the VM, then restart with `restart app` |
 | Everything fails | use the ngrok fallback above, or a local copy: `http://localhost:5000` (identical behaviour) |

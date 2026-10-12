@@ -6,7 +6,7 @@ of band pairs. A new normalised-difference index is one line in INDICES.
 Not offered, deliberately:
   EVI   needs a Blue band; LISS-III has none.
   SAVI  its soil constant (0.5) is defined for reflectance. It is meaningless on radiance (mW/cm2/sr/um), so it
-        waits for TOA reflectance (see later.md).
+        waits for TOA reflectance (see README section 5).
 """
 from dataclasses import dataclass
 

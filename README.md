@@ -88,7 +88,7 @@ Where logging in is enabled, the date section has a **Find Bhoonidhi scenes** bu
 pickers (default: the last six months; quick buttons for 2 months, 6 months, 1 year, 3 years and everything since 2011). It logs you in if needed (the emailed code, in the page), searches Bhoonidhi for the online LISS-III scenes whose footprint
 covers the drawn area, and lists them by date with the satellite. For the newest ten, the scene's true image footprint is read
 from its public metadata file, so each entry says whether the tilted image really covers the area (any range back to 2011 can be
-searched: it is searched in year-long windows, newest first, and the list shows the newest 40 with a note when older ones exist); scenes that do not are shown but
+searched: it is searched in year-long windows, newest first, each split further whenever one search returns a full page of 100, and the list shows the newest 40 with a note when older ones exist); scenes that do not are shown but
 cannot be chosen. Pick a date and press **Run**: exactly that scene is downloaded (a chosen scene id goes to `/api/fetch`).
 Without searching, a Run on an uncovered area still fetches the newest suitable scene, as before. The listing is a separate
 helper endpoint (`/api/scenes`, rate-limited per session), not part of the WPS.
@@ -148,7 +148,7 @@ reflectance and is meaningless on radiance; it waits for TOA reflectance).
 | Input | `colour_scale` | Literal, `stretch` \| `absolute` | Optional, default `stretch`. Affects the **preview image only**, never the GeoTIFF: `stretch` colours the 2nd-98th percentile of this result (relative contrast), `absolute` uses a fixed -1 to +1 scale so the same colour means the same value in every request. |
 | Output | `ndvi` | Complex, `image/tiff; subtype=geotiff` | Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS. Returned by reference. |
 | Output | `preview` | Complex, `image/png` | Colour PNG in latitude/longitude for web maps: no-data transparent, colours stretched between the 2nd and 98th percentile (relative contrast only). Its map bounds and legend are in `stats`. |
-| Output | `stats` | Complex, `application/json` | scene id, date, bbox, shape, min/mean/max, valid fraction, radiometry mode, preview bounds and legend. |
+| Output | `stats` | Complex, `application/json` | scene id, date, bbox, shape, min/mean/max, valid fraction, radiometry mode, attribution (`ISRO-IRS`), a rough `cloud_hint`, preview bounds and legend. |
 
 Errors are returned as proper OGC `ExceptionReport`s (unknown process, invalid or inverted bbox, bbox over the size
 limit, bad date, no scene covering the request).
@@ -213,7 +213,7 @@ QGIS 3 has no built-in WPS client, and I have not tested a WPS plugin; any WPS 1
 - **Two data modes, one code path.** Full scenes (local, from `data/`) or a pre-clipped cache (public). The cache has
   the same folder layout (`BAND2..5.tif` + `BAND_META.txt`) with small compressed COG bands of the *original* DN values;
   NDVI from the cache was checked to be bit-identical to NDVI from the full scene for the Hyderabad demo window. `scripts/build_cache.py` builds it from scenes you
-  downloaded yourself; the public image contains only this cache (~38 MB for both scenes) and no credentials.
+  downloaded yourself; the public image contains only this cache (about 70 MB for the four scenes) and no credentials.
 - **PyWPS conformance fixes** (`app/pywps_compat.py`, applied at import so they survive reinstalls):
   - Axis order: PyWPS 4.8 delivers XML-POST bounding boxes as lon,lat but KVP as lat,lon. Both now follow the OGC
     convention (lat,lon for EPSG:4326); regression tests cover both encodings.
@@ -305,8 +305,9 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 - **Radiance by default; TOA reflectance is built but disabled.** Indices are computed on at-sensor radiance.
   `radiometry=toa` is implemented (formula from NRSC's own surface-reflectance guide, tested against hand calculations)
   but needs the per-band solar irradiance (ESUN). I could not find a citable open source for the LISS-III values and did
-  not guess them, so the service refuses `toa` until `app/esun_liss3.json` is filled from a publication (`later.md` says
-  how). Radiance carries no solar-irradiance correction; since red sunlight is stronger than NIR, NDVI is expected to be
+  not guess them, so the service refuses `toa` until `app/esun_liss3.json` is filled from a publication: a `source` and a value
+  for each of bands 2-5 in mW/cm2/um (for example Pandya et al. 2013, *Remote Sensing Letters* 4(3),
+  doi:10.1080/2150704X.2012.727491, which is paywalled and which I could not read; values in W/m2/um must be divided by 10). Radiance carries no solar-irradiance correction; since red sunlight is stronger than NIR, NDVI is expected to be
   biased low (the Hyderabad 23 May clip has a median NDVI of about -0.05; 2 Oct is greener, about +0.06 on the mean, as expected after the monsoon, but the sensors differ so compare patterns, not numbers), but I could not quantify the bias without
   the ESUN values. Treat values as relative. The priced BOA surface-reflectance product is the proper alternative.
 - **Prepared scenes are the four shown on the map** (the ngrok copy serves only these, with login off; the Azure instance and
@@ -329,11 +330,12 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
   document, learnt from a third-party client, so it may change. The documented official `/download` was refused
   ("Invalid session detected") for every way of sending the token; the cause is unknown (possibly an account
   permission). The public instance never has credentials and does not log anyone in.
-- **Some older scenes are refused by Bhoonidhi.** For several 2021-2023 Resourcesat-2/2A scenes the portal's own search lists the product as `OpenData_DirectDownload`, yet its download path answers HTTP 404 with a "permission denied" page, the same from the server and from a laptop (2026-10-12), while 2020 and 2026 scenes downloaded. The cause is on Bhoonidhi's side (an account or product permission); the service reports it as a refusal (not a missing file) and marks the scene in the list. Reported to NRSC: not yet.
+- **Some older scenes are refused by Bhoonidhi.** For several 2021-2023 Resourcesat-2/2A scenes the portal's own search lists the product as `OpenData_DirectDownload`, yet its download path answers HTTP 404 with a "permission denied" page, the same from the server and from a laptop with a different address, and the same from the previous version of this code (2026-10-12), while 2020 scenes (and 2026 ones) downloaded. So it is not a bug in the service. The cause is on Bhoonidhi's side (an account or product permission); the service reports it as a refusal (not a missing file) and marks the scene in the list. Reported to NRSC: not yet.
 - **Searches are complete.** One Bhoonidhi search returns at most 100 scenes and cuts an over-full answer off (the newest were missing from a year-long search), so a full page is split into smaller date ranges until nothing is cut off.
-- **Rate limits.** Bhoonidhi limits requests per *server* address, shared by everyone using that server: about 3 searches a second and **20 logins an hour** (the documented limits), and it may limit the portal too. This service spaces its portal requests out, looks each scene up once, and explains an HTTP 429 with the wait the portal asks for; the service's own limits are 10 login or code attempts a minute per visitor, 5 wrong codes per login and one scene search every 4 seconds per session. After many logins in a row (testing, "Start over"), expect to wait up to an hour. Running your own copy gives you your own address.
-- **No cloud masking, only a hint.** Bhoonidhi's cloud percentage is empty in the scene metadata, so the service cannot filter by it. Instead every result carries a rough `cloud_hint` in its statistics (and the page shows a warning on the layer): the share of pixels whose green-band radiance is far above anything clear land gave (more than 15 mW/cm2/sr/um), reported as "cloud or haze **may** be present" at 10% or more and "may cover much of the area" at 50% or more. It comes from six scenes: the clear ones had a mean green radiance of 3.9 to 7.8 and at most 5% of pixels above the limit, the overcast 12 Aug 2020 scene 23.4 and 94%. Bright ground (sand, roofs) can trigger it and thin cloud or haze can slip under it, so it is a warning, not a mask, and the index values themselves are never changed. The scene list cannot show it, because it needs the pixels; single-scene results, no mosaicking or
-  time-series; scenes lie in different UTM zones (43N/44N), so combining them would need reprojection.
+- **Rate limits.** Bhoonidhi limits requests per *server* address, shared by everyone using that server: about 3 searches a second and **20 logins an hour** (the documented limits), and it may limit the portal too. This service spaces its portal requests out, looks each scene up once, and explains an HTTP 429 with the wait the portal asks for; the service's own limits are 10 login or code attempts a minute per visitor, 5 wrong codes per login and one scene search every 2 seconds per session. After many logins in a row (testing, "Start over"), expect to wait up to an hour. Running your own copy gives you your own address.
+- **No cloud masking, only a hint.** Bhoonidhi's cloud percentage is empty in the scene metadata, so the service cannot filter by it. Instead every result carries a rough `cloud_hint` in its statistics (and the page shows a warning on the layer): the share of pixels whose green-band radiance is far above anything clear land gave (more than 15 mW/cm2/sr/um), reported as "cloud or haze **may** be present" at 10% or more and "may cover much of the area" at 50% or more. It comes from six scenes: the clear ones had a mean green radiance of 3.9 to 7.8 and at most 5% of pixels above the limit, the overcast 12 Aug 2020 scene 23.4 and 94%. Bright ground (sand, roofs) can trigger it and thin cloud or haze can slip under it, so it is a warning, not a mask, and the index values themselves are never changed. The scene list cannot show it, because it needs the pixels.
+- **One scene per answer.** No mosaicking or time-series; scenes lie in different UTM zones (43N/44N), so combining them would
+  need reprojection.
 - **On radiance, only relative contrast is meaningful, not absolute values or standard thresholds.** Real example
   (Hyderabad, 23 May): every pixel has a positive MNDWI (minimum 0.61) and the median NDBI is -0.66, most likely because the
   SWIR band's radiance range (Lmax 7.5) is tiny next to green's (Lmax 52); not verified. The indices do pick out the right places: Hussain Sagar lake sits at
@@ -342,7 +344,7 @@ Tests: `.venv/Scripts/python -m pytest` (the real-data tests are skipped if `dat
 - Four indices; SAVI and EVI are not offered (see Processes).
 - Not independently validated against a reference NDVI product. Manual checks done by the author: the GeoTIFF output
   loads in QGIS over central Hyderabad with the expected CRS and layout, and the public URL answers from a phone on
-  mobile data. The automated lake test is a relative check only. The map page's colours were checked in headless-browser screenshots; the click-to-draw interaction itself is not covered by an automated browser test.
+  mobile data. The automated lake test is a relative check only. The map page and its login, fetch, scene-choice and saved-layers flows are exercised in a real Chrome by the Puppeteer scripts in `tests/e2e/` (against a fake Bhoonidhi; they are not part of CI).
 
 ## 6. Data, attribution and the licence
 
@@ -379,10 +381,10 @@ any reason". If this service were to run beyond coursework, ask NRSC (data@nrsc.
 ```
 app/            service code: radiometry, indices, scene clipping, WPS processes, colour preview, Flask server, Bhoonidhi client
 app/static/     the interactive map page (HTML, JS, CSS, vendored Leaflet)
-scripts/        inspect_scene.py, build_cache.py, fetch_scene.py, owslib_check.py, validate_schema.py
+scripts/        inspect_scene.py, build_cache.py, fetch_scene.py, dev_fake_bhoonidhi.py, owslib_check.py, validate_schema.py
+deploy/         docker-compose.yml + Caddyfile for the Azure VM (HTTPS)
 .github/        CI workflow (runs the tests that need no scenes)
-tests/          unit, WPS protocol and schema-validation tests (tests/schemas = official OGC XSDs)
-docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (demo script), screenshots
+tests/          unit, WPS protocol, schema-validation and fake-Bhoonidhi tests (tests/schemas = official OGC XSDs); tests/e2e = browser tests
+docs/           HOW_IT_WORKS.md (architecture, Docker/ngrok guide), DEMO.md (demo script), AZURE.md (VM deployment), screenshots
 Dockerfile, pywps.cfg, requirements.txt
-later.md        deferred work and priorities
 ```

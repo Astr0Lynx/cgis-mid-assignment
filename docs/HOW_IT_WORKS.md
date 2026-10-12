@@ -24,8 +24,9 @@ A guide to what is running, why, and how to operate it. No prior Docker, WPS or 
 
 - **The service** answers standard OGC WPS requests at one URL ending in `/wps`. It offers two processes, `ndvi` and
   `spectral-index` (NDVI, NDWI, MNDWI, NDBI).
-- **Docker** is the box it runs in. **ngrok** is a tunnel that gives that box a public web address.
-- Both are only *how it is delivered*. The actual idea is the code in `app/`.
+- **Docker** is the box it runs in. The public instance runs on an **Azure VM** (Docker, with Caddy giving it HTTPS; see
+  [AZURE.md](AZURE.md)). **ngrok** is a tunnel that gives a laptop copy a public web address, kept as a fallback.
+- These are only *how it is delivered*. The actual idea is the code in `app/`.
 
 ## 2. Words you need
 
@@ -60,21 +61,27 @@ app/
                     (outlines of the area actually on disk), plus the login and fetch routes below.
   webauth.py        Browser login (only if BROWSER_LOGIN=1): /api/login, /api/otp, /api/session, /api/logout. Keeps each
                     visitor's logged-in Bhoonidhi client in memory behind an HttpOnly cookie; never stores the password.
-  fetchjobs.py      /api/fetch: runs the scene download in a background thread for a logged-in visitor; the page polls it.
+  fetchjobs.py      /api/scenes (list the Bhoonidhi scenes over an area for a date range) and /api/fetch (download one scene in
+                    a background thread for a logged-in visitor; the page polls it).
+  clouds.py         A rough "cloud or haze may be present" hint from green-band brightness, added to every result's statistics.
   preview.py        Colour PNG preview of a result (reprojected to lat/lon, percentile stretch), built with numpy + zlib.
   static/           The interactive map page: index.html, app.js, style.css and a vendored copy of Leaflet.
   cleanup.py        Deletes stored results older than OUTPUT_TTL_HOURS so the disk cannot fill up.
   bhoonidhi_client.py  Talks to Bhoonidhi: API login + STAC search, the portal's own login (emailed one-time code),
                     the portal's search and download route, safe unpacking. Verified on the real service (README section 5).
-  live_fetch.py     Fetching glue used by the page, the script and (off by default) request-time mode. Before a download
-                    it reads the scene's small public .meta file so a tilted scene that misses the area is skipped.
+  live_fetch.py     Fetching glue used by the page, the script and (off by default) request-time mode. Searches are split
+                    until no answer fills a page of 100 (so none are cut off); before a download it reads the scene's
+                    small public .meta file so a tilted scene that misses the area is skipped.
 scripts/
   build_cache.py    data/ -> cache/ (cuts the scenes down to Hyderabad).
-  fetch_scene.py    Fetches a scene from Bhoonidhi into data/ (--dry-run only searches). Needs your own account.
+  fetch_scene.py    Fetches a scene from Bhoonidhi into data/ (--dry-run only searches; --probe-portal-download checks the
+                    download path without downloading). Needs your own account.
+  dev_fake_bhoonidhi.py  The real app against a made-up Bhoonidhi, to try login and fetching with no account.
   inspect_scene.py  Prints a scene's file headers.
   owslib_check.py   Drives the service with a third-party client (OWSLib).
   validate_schema.py  Checks every kind of reply against the official OGC XML schemas.
-tests/              Automated tests (150+). tests/schemas/ holds the official OGC XSD files.
+tests/              Automated tests (260+). tests/schemas/ holds the official OGC XSD files; tests/e2e/ has the browser tests.
+deploy/             docker-compose.yml + Caddyfile for the Azure VM (see AZURE.md).
 Dockerfile          Recipe for the container image.        pywps.cfg   PyWPS settings.
 data/   cache/   outputs/   workdir/   state/    -> created at run time, NOT in git (see .gitignore).
 ```
@@ -146,6 +153,8 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 | `BHOONIDHI_DATA_DIR` | `/srv/data` in Docker | folder holding the scene folders |
 | `BHOONIDHI_LIVE`, `BHOONIDHI_USER`, `BHOONIDHI_PASSWORD` | unset | live mode (all three needed). Your own account; **local use only** |
 | `BHOONIDHI_LOOKBACK_DAYS`, `BHOONIDHI_MAX_DOWNLOADS` | 60, 2 | live mode: search window when no date is given; downloads per request |
+| `TRUST_PROXY` | unset | `1` behind Caddy: rate limits use the visitor's address from `X-Forwarded-For` |
+| `PORT` | 5000 | port for `python -m app.server` (use another to run beside the container) |
 | `BROWSER_LOGIN` | unset | `1` lets visitors log in to Bhoonidhi from the page and fetch scenes. **Not on a public tunnel**; see README section 3 |
 | `FETCH_TTL_HOURS`, `FETCH_MAX_GB` | 6, 3 | fetched scenes (`data/_fetched`) are shared, then deleted after this age or above this total size |
 | `BHOONIDHI_DOWNLOAD_AUTH` | `bearer` | how a scene is downloaded: `portal` (works: the portal's own route; asks for an emailed code) or an official-API form `bearer`/`query`/`token-header` (all refused by the server) |
@@ -163,8 +172,9 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
   bands and `BAND_META.txt`, and checks that real pixels cover your area (it refuses scenes whose tilted image misses it).
   Then `build_cache.py` and a rebuilt image serve it. Credentials must come from the environment or a git-ignored `.env`,
   never from the image.
-- **Getting scenes from the page (local, `BROWSER_LOGIN=1`):** the same steps, driven by the visitor. Press Run on an area
-  no scene covers; a dialog takes the user id and password, then the emailed code; the pending Run continues by itself.
+- **Getting scenes from the page (the Azure instance, or local with `BROWSER_LOGIN=1`):** the same steps, driven by the visitor.
+  Press Run on an area no scene covers (or use **Find Bhoonidhi scenes** to choose a date); a dialog takes the user id and
+  password, then the emailed code; the pending Run continues by itself.
   The scene lands in `data/_fetched`, is visible to everyone (`/api/coverage` re-reads the disk), and expires after
   `FETCH_TTL_HOURS`. To try it with no account: `python scripts/dev_fake_bhoonidhi.py`. Automated browser test: `tests/e2e/`.
 
@@ -186,10 +196,14 @@ address that forwards to `localhost:5000`. Run it in its own terminal: `ngrok ht
 - `tests/test_wps.py`: the service behaves (capabilities, describe, execute, dates, size limit, raw output, errors).
 - `tests/test_schema.py`: replies validate against the **official OGC schemas**.
 - `tests/test_cleanup.py`, `tests/test_build_cache.py`: result expiry, and that the cache gives identical indices.
-- `tests/test_bhoonidhi_client.py`, `test_live_mode.py`, `test_fetch_script.py`: the Bhoonidhi client, live mode through the
-  WPS endpoint, and the check script, all against a **fake** of the documented API (`tests/live_helpers.py`). They prove
-  the logic; only your own account can prove the real API behaves as documented (login and search have been checked that way;
-  download has not).
+- `tests/test_bhoonidhi_client.py`, `test_live_mode.py`, `test_fetch_script.py`, `test_precheck.py`, `test_scene_choice.py`,
+  `test_webauth.py`, `test_fetchjobs.py`: the Bhoonidhi client, live mode, browser login, scene listing and fetching, all against a
+  **fake** Bhoonidhi (`tests/live_helpers.py`) that copies behaviours seen on the real one (404 for an empty search, a full page of
+  100, the "permission denied" page). They prove the logic; only a real account proves the real service (login, search, the
+  download and the footprint check have been verified that way).
+- `tests/test_clouds.py`, `test_absolute.py`, `test_versions.py`, `test_attribution.py`: the cloud hint, the absolute colour scale and
+  reflectance option, WPS version handling, and the ISRO-IRS attribution.
+- `tests/e2e/*.js`: the map page in a real Chrome (login, fetch, scene choice, saved layers); not part of CI.
 - `scripts/validate_schema.py URL`: same, including async, against a *running* server.
 - `scripts/owslib_check.py URL`: a third-party WPS client can use it end to end.
 
@@ -198,5 +212,5 @@ checked by the two scripts against the container).
 
 ## 10. Known limits
 
-Radiance by default, so index values are biased and only relative contrast is meaningful (see README section 5). TOA reflectance is implemented but switched off until someone fills `app/esun_liss3.json` from a published source (the numbers are in a paywalled paper; they must not be guessed); four indices (no SAVI/EVI); the public instance serves four scenes around Hyderabad only; no cloud masking; one scene per
-answer. See README section 5.
+Radiance by default, so index values are biased and only relative contrast is meaningful (see README section 5). TOA reflectance is implemented but switched off until someone fills `app/esun_liss3.json` from a published source (the numbers are in a paywalled paper; they must not be guessed); four indices (no SAVI/EVI); the prepared scenes are four around Hyderabad (others can be fetched by a visitor with a Bhoonidhi account); no cloud masking, only a
+rough warning; one scene per answer; Bhoonidhi refuses some 2021-2023 downloads. See README section 5.

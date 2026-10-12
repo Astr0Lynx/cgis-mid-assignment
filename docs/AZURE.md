@@ -7,8 +7,11 @@ are done** (step 8).
 
 ## 1. Create the VM (Azure portal)
 1. Virtual machines > Create > Azure virtual machine.
-2. Region: one your student subscription allows (try Central India or South India; if the size is unavailable, pick another region).
-3. Image: **Ubuntu Server 24.04 LTS**. Size: **Standard_B2s** (2 vCPU, 4 GiB). Not smaller: GDAL/rasterio need memory.
+2. Region: one your student subscription allows. A student subscription restricts regions with a policy (the allowed list is under
+   Policy > Assignments); this deployment uses **Malaysia West**, the first allowed region that had a suitable size (India regions were
+   not allowed). Set Availability to "No infrastructure redundancy".
+3. Image: **Ubuntu Server 24.04 LTS**. Size: **Standard_B2als_v2** (2 vCPU, 4 GiB, about US$31 a month in Malaysia West); if it is
+   unavailable pick another 2 vCPU / 4+ GiB size. Not smaller: GDAL/rasterio need memory.
 4. Authentication: SSH public key, user `azureuser`; let Azure generate a key and **download the .pem file** (keep it private).
 5. Inbound ports: allow **SSH (22)**, **HTTP (80)** and **HTTPS (443)**. Disk: the default 30 GB is enough.
 6. Create. When it is running, open the VM > Networking and change the SSH rule's source from "Any" to **My IP address**
