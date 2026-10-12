@@ -103,3 +103,5 @@ body.resizing #map { pointer-events: none; }
 .layer-tools { display: flex; align-items: center; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
 .layer-tools input[type=range] { flex: 1 1 70px; min-width: 60px; margin: 0; }
 .layer-tools .btn { padding: 2px 7px; font-size: 12px; }
+.layer-dl { margin: 6px 0 0; font-size: 12px; color: var(--muted); }
+.layer-dl a { color: var(--accent); }

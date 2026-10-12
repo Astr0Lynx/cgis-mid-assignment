@@ -87,7 +87,7 @@ The map page's **Advanced** section offers the quantity (`radiometry`) and the c
 Every result stays on the map as a **saved layer** (up to 20). The layers list has, for each layer, a show/hide box, its own
 opacity slider, Zoom, move up/down in the stacking order, Rename and Remove, plus "Remove all". Clicking a layer's card (or
 the layer on the map) selects it, and the *Selected layer* section then shows that layer's legend, statistics, download links
-(GeoTIFF, preview PNG, WPS response) and the exact request behind it. Running the identical request again selects the existing
+(GeoTIFF, preview PNG, WPS response) and the exact request behind it. Each layer card also has its own **Download: GeoTIFF · PNG · XML** links, named after the layer, so any layer can be downloaded without selecting it first. Running the identical request again selects the existing
 layer instead of duplicating it; "Clear" only clears the drawn box. Layers live in the page (a reload clears them), and
 stored result files on the server expire after `OUTPUT_TTL_HOURS`, so very old layers' download links stop working
 while the layer itself keeps showing. Reading the value under the cursor is not offered (the preview image holds colours,

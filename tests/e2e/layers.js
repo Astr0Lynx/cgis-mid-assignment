@@ -46,6 +46,15 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     const links2 = await p.$$eval('#links a', (a) => a.map((x) => x.getAttribute('href')));
     ok('8 each layer has its own download links', links[0] !== links2[0] && /ndvi\.tif|\.tif/.test(links[0]) && links[0].includes('/outputs/'), `${links[0]}  vs  ${links2[0]}`);
 
+    // downloads on every card
+    const cardLinks = await p.$$eval('#layer-list > li', (cards) => cards.map((c) => Array.from(c.querySelectorAll('.layer-dl a')).map((a) => ({ t: a.textContent, h: a.getAttribute('href'), d: a.getAttribute('download') }))));
+    ok('8b every card has its own GeoTIFF, PNG and XML download', cardLinks.length === 3 && cardLinks.every((c) => c.map((x) => x.t).join() === 'GeoTIFF,PNG,XML'));
+    const tifs = cardLinks.map((c) => c[0].h);
+    ok('8c the three GeoTIFF links are different files', new Set(tifs).size === 3, tifs.join(' '));
+    ok('8d download names carry the layer name', cardLinks.every((c) => /^(NDVI|NDWI|MNDWI)_2026-10-02_\d+\.tif$/.test(c[0].d)), cardLinks.map((c) => c[0].d).join(' '));
+    const served = await p.evaluate(async (urls) => Promise.all(urls.map(async (u) => { const r = await fetch(u); const b = await r.arrayBuffer(); const m = new Uint8Array(b.slice(0, 4)); return [r.status, m[0] === 0x49 || m[0] === 0x4d, b.byteLength]; })), tifs);
+    ok('8e each GeoTIFF link serves a real TIFF file', served.every((s) => s[0] === 200 && s[1] && s[2] > 1000), JSON.stringify(served));
+
     // visibility
     await p.click('#layer-list > li:nth-child(2) input[type=checkbox]'); await wait(300);
     ok('9 hiding a layer removes its image from the map but keeps the card', (await imgs()) === 2 && (await count()) === 3);

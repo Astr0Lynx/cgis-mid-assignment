@@ -238,6 +238,7 @@
   function refreshRunButton() { setRunDisabled(!(bbox && !$('date').disabled)); }
   // ---------- saved layers: every result stays on the map until removed ----------
   const layerById = (id) => layers.find((l) => l.id === id);
+  const fileBase = (l) => l.name.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || `layer_${l.id}`;
   function restack() { layers.forEach((l) => { if (l.visible) l.overlay.bringToFront(); }); }  // bottom first, so the last ends on top
   function addLayer(out, stats, xmlText, url) {
     const pv = stats.preview, b = pv.bounds_south_west_north_east;
@@ -317,7 +318,17 @@
         btn('▼', 'Move down in the stack', () => moveLayer(l.id, -1), k === 0),
         btn('Rename', 'Rename this layer', () => { const n = window.prompt('Layer name', l.name); if (n && n.trim()) { l.name = n.trim().slice(0, 80); renderLayers(); renderDetails(); } }),
         btn('Remove', 'Remove this layer from the map', () => removeLayer(l.id)));
-      li.append(top, sub, tools);
+      const dl = document.createElement('div'); dl.className = 'layer-dl';
+      dl.append('Download: ');
+      [['GeoTIFF', l.tif, `${fileBase(l)}.tif`, 'The index values as a float32 Cloud Optimized GeoTIFF'],
+       ['PNG', l.png, `${fileBase(l)}.png`, 'The coloured preview image'],
+       ['XML', l.xmlUrl, `${fileBase(l)}.xml`, 'The WPS response for this run']].forEach(([label, href, file, title], i) => {
+        if (i) dl.append(' · ');
+        const a = document.createElement('a'); a.href = href; a.textContent = label; a.title = title; a.download = file;
+        a.addEventListener('click', (e) => e.stopPropagation());
+        dl.append(a);
+      });
+      li.append(top, sub, tools, dl);
       li.addEventListener('click', () => selectLayer(l.id));
       ul.append(li);
     }
@@ -349,7 +360,7 @@
     [['Download GeoTIFF (float32 COG)', l.tif, true], ['Preview PNG', l.png, false], ['WPS response (XML)', l.xmlUrl, false]].forEach(([label, href, dl], i) => {
       if (i) links.append(' · ');
       const a = document.createElement('a'); a.href = href; a.textContent = label; a.target = '_blank'; a.rel = 'noopener';
-      if (dl) a.download = `${stats.index}_${stats.date}.tif`;
+      if (dl) a.download = `${fileBase(l)}.tif`;
       links.append(a);
     });
   }
