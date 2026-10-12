@@ -524,3 +524,23 @@ def test_month_names_do_not_depend_on_the_locale():
     from app.bhoonidhi_client import MONTHS
 
     assert MONTHS[9] == "OCT" and len(MONTHS) == 12 and all(len(m) == 3 and m.isupper() for m in MONTHS)
+
+
+def test_a_portal_404_reports_the_facts_that_tell_its_causes_apart(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_paths = {"/bhoonidhi/data/RS2/3/1999/JAN/elsewhere.zip"}   # the portal lists the scene but has no file at its address
+    with pytest.raises(BhoonidhiError) as e:
+        portal_client(api).download_scene(item(), tmp_path / "data", bbox=BBOX)
+    text = str(e.value)
+    assert "portal has no file at /bhoonidhi/data/RS2/3/2026/MAY/" in text
+    assert "The portal's search does list this scene (PRICED=" in text and "DIRPATH=" in text
+    assert "portal login is 0 minutes old" in text
+    assert "correct-horse" not in text and "token" not in text.lower().replace("the token", "")
+
+
+def test_a_portal_404_for_a_scene_the_portal_does_not_list_says_the_address_was_inferred(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_selections = set()
+    api.portal_paths = {"/bhoonidhi/data/RS2/3/1999/JAN/elsewhere.zip"}
+    with pytest.raises(BhoonidhiError, match="did not list this scene, so the address was inferred"):
+        portal_client(api).download_scene(item(), tmp_path / "data", bbox=BBOX)

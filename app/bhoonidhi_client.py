@@ -280,6 +280,7 @@ class BhoonidhiClient:
 
     def _keep_portal_jwt(self, jwt: str) -> str:
         self._portal_jwt = jwt
+        self._portal_since = self._clock()  # for diagnostics only: how old the portal login is
         self._secrets.add(jwt)
         return jwt
 
@@ -458,6 +459,7 @@ class BhoonidhiClient:
         last = None
         self._tried_portal_paths = []
         record = self.find_portal_record(item, bbox) if bbox else None
+        self._portal_record_seen = record
         for url in self.portal_candidates(item, record):
             r = self._portal_get(url, item, stream=True, timeout=(15, 300))
             self._tried_portal_paths.append(urlsplit(url).path)
@@ -467,6 +469,19 @@ class BhoonidhiClient:
         if last is None:
             raise BhoonidhiError(f"no portal download address is known for collection {item.collection!r}")
         return last
+
+    def _portal_404_facts(self) -> str:
+        """Non-secret facts that tell the usual causes of a portal 404 apart (a stale login, an archived product, a wrong path)."""
+        record = getattr(self, "_portal_record_seen", None)
+        if record:
+            fields = ", ".join(f"{k}={record.get(k)}" for k in ("PRICED", "TABLETYPE", "DIRPATH") if k in record)
+            facts = f" The portal's search does list this scene ({fields})."
+        else:
+            facts = " The portal's own search did not list this scene, so the address was inferred."
+        since = getattr(self, "_portal_since", None)
+        if since is not None:
+            facts += f" Your portal login is {max(0, int((self._clock() - since) // 60))} minutes old; if that is long, log out, log in again and retry."
+        return facts
 
     def probe_portal_download(self, item: Item, record: dict | None = None) -> list[dict]:
         """Ask the portal's data path for the scene, once per candidate address, reading only the first bytes.
@@ -615,7 +630,7 @@ class BhoonidhiClient:
                 continue
             if r.status_code == 404 and self.download_auth == "portal":
                 raise BhoonidhiError(f"the Bhoonidhi portal has no file at {', '.join(self._tried_portal_paths)} "
-                                     "(the directory layout there may differ from the one assumed)")
+                                     "(the directory layout there may differ from the one assumed)" + self._portal_404_facts())
             if r.status_code == 404:
                 raise BhoonidhiError("Bhoonidhi says this product is not available on online storage")
             if r.status_code != 200:
