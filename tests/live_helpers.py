@@ -102,6 +102,7 @@ class FakeBhoonidhi:
         self.portal_sat, self.portal_sensor = "RS2", "LIS3"  # the portal's own codes for the scenes it lists
         self.portal_selections = {"ResourceSat-2_LISS3_L2", "ResourceSat-2_LISS3_L2-Archives"}  # names it recognises
         self.portal_search_bodies = []
+        self.portal_search_status = None   # e.g. 429: the portal search refuses every request
         self.filter_dates = False   # True: searches only return scenes inside the requested datetime range
         self.search_windows = []
         self.meta_corners = {}  # scene id -> {"UL": (lon, lat), ...}: what the portal's metadata file reports (absent = 404)
@@ -125,6 +126,8 @@ class FakeBhoonidhi:
             text = "".join(f"Image{c}Lon= {lon}\nImage{c}Lat= {lat}\n" for c, (lon, lat) in corners.items())
             return FakeResponse(200, text)
         if path == "/bhoonidhi/ProductSearch":  # the portal's own search (request format from the unofficial client)
+            if self.portal_search_status:  # a scripted refusal, e.g. 429
+                return FakeResponse(self.portal_search_status, "Too many requests", headers={"Retry-After": "120"})
             return self._portal_search(kw["json"])
         if path == "/bhoonidhi/LoginServlet":  # the portal's own login (separate from the official API's)
             return self._portal_login(json.loads(kw["data"]))

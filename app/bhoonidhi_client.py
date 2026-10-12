@@ -138,6 +138,9 @@ class BhoonidhiClient:
         self._secrets = {password}  # every secret ever held, so none can leak through an old message
         self._expires_at = 0.0
         self._last_search = 0.0
+        self._last_portal = 0.0                 # when the portal was last asked something (to space requests out)
+        self._record_cache: dict[str, dict | None] = {}   # portal record per scene id: looked up once, not at every step
+        self._meta_cache: dict[str, dict | None] = {}
 
     # ---- authentication ------------------------------------------------------------------------------------
 
@@ -204,6 +207,8 @@ class BhoonidhiClient:
         self._last_search = self._clock()
 
         r = self._call("POST", "/data/search", json=body, timeout=60)
+        if r.status_code == 429:
+            raise BhoonidhiError(self._limited(r))
         if r.status_code != 200:
             raise BhoonidhiError(f"Bhoonidhi search failed: HTTP {r.status_code} {self._describe(r)}")
         items = []
@@ -359,6 +364,7 @@ class BhoonidhiClient:
             "tllat": str(maxy), "tllon": str(minx), "brlat": str(miny), "brlon": str(maxx), "filters": "%7B%7D",
         }
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        self._portal_pause()
         try:
             r = self.session.request("POST", f"{self.portal_url}{PORTAL_SEARCH_PATH}", json=payload, headers=headers,
                                      timeout=(10, 60))
@@ -367,6 +373,8 @@ class BhoonidhiClient:
                                          headers={**headers, "token": self._portal_jwt}, timeout=(10, 60))
         except requests.RequestException as e:
             raise BhoonidhiError(f"could not reach the Bhoonidhi portal search: {type(e).__name__}") from None
+        if r.status_code == 429:
+            raise BhoonidhiError(self._limited(r))
         if r.status_code != 200:
             raise BhoonidhiError(f"Bhoonidhi portal search failed: HTTP {r.status_code} {self._describe(r)}")
         try:
@@ -378,11 +386,18 @@ class BhoonidhiClient:
         """The portal's record for this scene (its real satellite, sensor, directory and file name), or None."""
         if not item.date:
             return None
+        if item.id in self._record_cache:
+            return self._record_cache[item.id]
+        found = None
         for name in (item.collection, f"{item.collection}-Archives"):  # the portal's display name may carry a suffix
             for record in self.portal_search(bbox, item.date, [name]):
                 if record.get("ID") == item.id or record.get("FILENAME") == item.id:
-                    return record
-        return None
+                    found = record
+                    break
+            if found:
+                break
+        self._record_cache[item.id] = found
+        return found
 
     def portal_meta_url(self, record: dict) -> str | None:
         """Address of the scene's small metadata file (the same text as BAND_META.txt, with the true image corners).
@@ -399,6 +414,11 @@ class BhoonidhiClient:
         url = self.portal_meta_url(record)
         if not url:
             return None
+        key = str(record.get("ID") or record.get("FILENAME") or url)
+        if key in self._meta_cache:
+            return self._meta_cache[key]
+        self._meta_cache[key] = None  # remembered even when unavailable, so a missing file is asked for once
+        self._portal_pause()
         try:
             r = self.session.request("GET", url, timeout=(10, 30))
             if r.status_code != 200:
@@ -410,7 +430,8 @@ class BhoonidhiClient:
                     meta[key.strip()] = value.strip()
         except Exception:
             return None
-        return meta if "ImageULLat" in meta else None
+        self._meta_cache[key] = meta if "ImageULLat" in meta else None
+        return self._meta_cache[key]
 
     def portal_candidates_from(self, record: dict) -> list[str]:
         """The download address the unofficial client builds from a portal record (no guessing)."""
@@ -443,8 +464,25 @@ class BhoonidhiClient:
         return [f"{self.portal_url}/bhoonidhi/data/{satellite}/{PORTAL_LISS3_SENSOR}/{m.year}/{MONTHS[m.month - 1]}/{item.id}.zip"
                 for m in months]
 
+    PORTAL_GAP_S = 0.4  # be gentle: at most about 2.5 portal requests a second from this client
+
+    def _portal_pause(self) -> None:
+        wait = self.PORTAL_GAP_S - (self._clock() - self._last_portal)
+        if wait > 0:
+            self._sleep(wait)
+        self._last_portal = self._clock()
+
+    @staticmethod
+    def _limited(r) -> str:
+        """The message for an HTTP 429 from Bhoonidhi, with the wait it asks for when it says so."""
+        after = (r.headers or {}).get("Retry-After")
+        wait = f" It asks to retry after {after} seconds." if after and str(after).isdigit() else ""
+        return ("Bhoonidhi is limiting requests from this server (HTTP 429, too many requests)." + wait
+                + " The limits are per server address and shared by everyone using it; wait a few minutes (logins: up to an hour) and retry.")
+
     def _portal_get(self, url: str, item: Item, **kwargs):
         token = self._portal_token()  # the portal rejects the official API's token ("permission denied")
+        self._portal_pause()
         try:
             return self.session.request("GET", url, params={"token": token, "product_id": item.id}, **kwargs)
         except requests.RequestException as e:

@@ -563,3 +563,51 @@ def test_the_variant_probe_finds_a_file_stored_in_a_neighbouring_month_without_d
     found = client.probe_portal_variants(item(), record)
     assert found[-1]["status"] == 200 and found[-1]["path"].endswith(f"/2026/APR/{SCENE}.zip")
     assert any(r["status"] == 404 and "/2026/MAY/" in r["path"] for r in found)   # the recorded month was tried first
+
+
+def count_portal_searches(api):
+    return len(api.portal_search_bodies)
+
+
+def test_a_scenes_portal_record_is_looked_up_once_not_at_every_step(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    client = portal_client(api)
+    client.portal_login()
+    first = client.find_portal_record(item(), BBOX)
+    after_first = count_portal_searches(api)
+    assert first and client.find_portal_record(item(), BBOX) is first and count_portal_searches(api) == after_first
+    client.download_scene(item(), tmp_path / "data", bbox=BBOX)       # the download reuses it too
+    assert count_portal_searches(api) == after_first
+
+
+def test_a_missing_metadata_file_is_asked_for_only_once(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})     # no meta_corners: the .meta file is a 404
+    client = portal_client(api)
+    client.portal_login()
+    record = client.find_portal_record(item(), BBOX)
+    before = len(api.calls)
+    assert client.fetch_portal_meta(record) is None and client.fetch_portal_meta(record) is None
+    assert len(api.calls) - before == 1
+
+
+def test_portal_requests_are_spaced_out(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    now, sleeps = {"t": 100.0}, []
+    client = BhoonidhiClient("student", "correct-horse", session=api, download_auth="portal",
+                             sleep=lambda s: (sleeps.append(s), now.__setitem__("t", now["t"] + s)), clock=lambda: now["t"])
+    client.portal_login()
+    sleeps.clear()
+    for _ in range(3):
+        client.portal_search(BBOX, item().date, [item().collection])
+    assert len(sleeps) == 2 and all(0.3 <= s <= BhoonidhiClient.PORTAL_GAP_S for s in sleeps)
+
+
+def test_a_429_from_bhoonidhi_is_explained_with_the_wait_it_asks_for(tmp_path):
+    api = FakeBhoonidhi()
+    client = portal_client(api)
+    client.portal_login()
+    api.portal_search_status = 429
+    with pytest.raises(BhoonidhiError) as e:
+        client.portal_search(BBOX, item().date, [item().collection])
+    text = str(e.value)
+    assert "limiting requests from this server" in text and "retry after 120 seconds" in text and "per server address" in text
