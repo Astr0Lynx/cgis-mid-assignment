@@ -738,11 +738,20 @@ class BhoonidhiClient:
                 r = self._download_request(params, self.download_auth, stream=True, timeout=(15, 300))
             if r.status_code in RETRY_STATUSES and attempt < len(self.retry_waits):
                 continue
-            if r.status_code == 404 and self.download_auth == "portal":
+            if r.status_code in (401, 403, 404) and self.download_auth == "portal":
                 try:
                     said = self._scrub(" ".join(r.text[:240].split()))
+                    refused = "permission_denied" in r.text[:2000].lower()
                 except Exception:
-                    said = ""
+                    said, refused = "", False
+                if refused:  # the portal's "permission denied" page, whatever HTTP status it is dressed in (it uses 404)
+                    raise BhoonidhiError(
+                        "the Bhoonidhi portal REFUSED this download with its 'permission denied' page. This is not a missing file: "
+                        "the address was built from the portal's own record." + self._portal_404_facts()
+                        + " Possible causes: a download limit on your account (try again later), your account lacking permission for "
+                        "this product, or a stale login (log out and in again). Try a recent scene to tell these apart.")
+                if r.status_code != 404:
+                    raise BhoonidhiError(f"Bhoonidhi download failed: HTTP {r.status_code} {self._describe(r)}")
                 raise BhoonidhiError(f"the Bhoonidhi portal has no file at {', '.join(self._tried_portal_paths)} "
                                      "(the directory layout there may differ from the one assumed)"
                                      + self._portal_404_facts() + (f" The portal replied: {said!r}." if said else ""))

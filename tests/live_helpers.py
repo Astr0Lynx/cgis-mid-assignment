@@ -102,6 +102,7 @@ class FakeBhoonidhi:
         self.portal_sat, self.portal_sensor = "RS2", "LIS3"  # the portal's own codes for the scenes it lists
         self.portal_selections = {"ResourceSat-2_LISS3_L2", "ResourceSat-2_LISS3_L2-Archives"}  # names it recognises
         self.portal_search_bodies = []
+        self.portal_denied = False         # True: the portal's data path answers 404 with its 'permission_denied' page
         self.portal_search_status = None   # e.g. 429: the portal search refuses every request
         self.filter_dates = False   # True: searches only return scenes inside the requested datetime range
         self.search_windows = []
@@ -135,6 +136,9 @@ class FakeBhoonidhi:
             q = kw.get("params") or {}
             if not self.portal_accepts or q.get("token") not in self.portal_tokens:  # the API's tokens are refused
                 return FakeResponse(401, "<!-- icons --> <html> <body class=\"permission_denied\"> Permission denied </body></html>",
+                                    headers={"Content-Type": "text/html;charset=UTF-8"})
+            if self.portal_denied:  # what the real portal does for a request it refuses (seen in production): 404 + its permission page
+                return FakeResponse(404, "<!-- Icons purchased via Iconfinder --> <html> <body class=\"permission_denied\"> <div align=\"center\">",
                                     headers={"Content-Type": "text/html;charset=UTF-8"})
             if (self.portal_paths is not None and path not in self.portal_paths) or q.get("product_id") not in self.archives:
                 return FakeResponse(404, "<html>Not Found</html>", reason="Not Found")

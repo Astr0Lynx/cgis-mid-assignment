@@ -384,7 +384,7 @@ def test_portal_download_refusal_is_reported_clearly(tmp_path):
     api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
     api.portal_accepts = False
     client = BhoonidhiClient("student", "correct-horse", session=api, sleep=lambda s: None, download_auth="portal")
-    with pytest.raises(BhoonidhiError, match="401.*permission_denied|401.*Permission denied"):
+    with pytest.raises(BhoonidhiError, match="REFUSED this download.*permission denied"):
         client.download_scene(item(), tmp_path / "data")
 
 
@@ -629,3 +629,20 @@ def test_every_request_is_logged_with_its_answer_and_never_with_a_secret(tmp_pat
     assert "-> 429" in text and "retry-after=120" in text and "Too many requests" in text   # the reply is recorded for diagnosis
     assert "correct-horse" not in text and "token=" not in text and "?" not in text.replace("?'", "")   # no password, token or query string
     assert any(r.levelno == logging.WARNING and "-> 429" in r.getMessage() for r in caplog.records)  # refusals stand out
+
+
+def test_the_portals_permission_denied_page_is_reported_as_a_refusal_not_a_missing_file(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_denied = True
+    with pytest.raises(BhoonidhiError) as e:
+        portal_client(api).download_scene(item(), tmp_path / "data", bbox=BBOX)
+    text = str(e.value)
+    assert "REFUSED this download" in text and "not a missing file" in text and "no file at" not in text
+    assert "download limit" in text and "Try a recent scene" in text and "PRICED=" in text
+
+
+def test_a_genuinely_missing_file_is_still_reported_as_missing(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_paths = {"/bhoonidhi/data/RS2/3/1999/JAN/elsewhere.zip"}
+    with pytest.raises(BhoonidhiError, match="portal has no file at"):
+        portal_client(api).download_scene(item(), tmp_path / "data", bbox=BBOX)
