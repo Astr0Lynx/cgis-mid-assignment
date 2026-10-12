@@ -83,6 +83,16 @@ Endpoint (local): `http://localhost:5000/wps`
 ### Absolute values and reflectance, in the interface
 The map page's **Advanced** section offers the quantity (`radiometry`) and the colour scale (`colour_scale`). The absolute scale is always available. Reflectance (`toa`) is built end to end and tested, but is **disabled until a cited per-band solar irradiance (ESUN) table is configured** in `app/esun_liss3.json` (a `source` and a value for each of bands 2-5, in mW/cm2/um); the option then switches on by itself, here and in the WPS (`/api/info` reports `toa_available`). I do not enter those numbers from memory, because wrong constants would give plausible but wrong reflectance. On radiance, the absolute scale makes NDVI look nearly flat (values sit near 0), which is why the relative stretch is the default.
 
+### Saved layers
+Every result stays on the map as a **saved layer** (up to 20). The layers list has, for each layer, a show/hide box, its own
+opacity slider, Zoom, move up/down in the stacking order, Rename and Remove, plus "Remove all". Clicking a layer's card (or
+the layer on the map) selects it, and the *Selected layer* section then shows that layer's legend, statistics, download links
+(GeoTIFF, preview PNG, WPS response) and the exact request behind it. Running the identical request again selects the existing
+layer instead of duplicating it; "Clear" only clears the drawn box. Layers live in the page (a reload clears them), and
+stored result files on the server expire after `OUTPUT_TTL_HOURS`, so very old layers' download links stop working
+while the layer itself keeps showing. Reading the value under the cursor is not offered (the preview image holds colours,
+not values, and a server endpoint for it was out of scope).
+
 ### Interactive map page
 `/` serves a small web page (Leaflet, vendored, no CDN): draw an area on the map (the prepared scenes are outlined),
 pick a scene date and an index, press **Run WPS process**, and the result is overlaid with a legend, statistics, download

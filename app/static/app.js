@@ -8,7 +8,9 @@
   const $ = (id) => document.getElementById(id);
 
   let info = null, scenes = [], map, coverageLayer, rect = null, cornerA = null, drawing = false;
-  let bbox = null, overlay = null, resultUrls = [], theme = null;
+  let bbox = null, theme = null;
+  let layers = [], selectedId = null, layerSeq = 0;  // saved results, bottom of the stack first
+  const MAX_LAYERS = 20;
   const FETCH = '__fetch__';  // the date choice meaning "fetch the newest suitable scene from Bhoonidhi"
   let account = { enabled: false, logged_in: false, otp_pending: false, user: null };
   let loginDone = null;       // resolves the Run that is waiting for a login (null when the user logged in on their own)
@@ -110,7 +112,7 @@
     map.getContainer().style.cursor = '';
   }
   function onMapClick(ev) {
-    if (!drawing) return;
+    if (!drawing) { selectAt(ev.latlng); return; }
     if (!cornerA) {
       cornerA = ev.latlng;
       if (rect) rect.remove();
@@ -127,9 +129,7 @@
   function clearAll() {
     stopDrawing(); setStatus('');
     if (rect) { rect.remove(); rect = null; }
-    if (overlay) { overlay.remove(); overlay = null; }
-    resultUrls.forEach((u) => URL.revokeObjectURL(u)); resultUrls = [];
-    bbox = null; $('result').hidden = true; setRunDisabled(true);
+    bbox = null; setRunDisabled(true);
     $('bbox-info').className = 'meta'; $('bbox-info').textContent = 'No area selected.';
     $('date').innerHTML = '<option>Draw an area first</option>'; $('date').disabled = true; $('date-info').textContent = '';
   }
@@ -138,12 +138,12 @@
 
   // ---------- the three OGC operations, each as a request of its own ----------
   let shownUrl = null;
-  function showRequest(url) {
+  function showRequest(url, open = true) {
     shownUrl = location.origin + url;
     $('ogc-url').textContent = `GET ${shownUrl}\n\ncurl "${shownUrl}"`;
     $('ogc-open').href = url;
     $('ogc-actions').hidden = false;
-    $('ogc').open = true;
+    if (open) $('ogc').open = true;
   }
   async function operation(kind, button) {
     const url = kind === 'caps' ? '/wps?service=WPS&request=GetCapabilities'
@@ -203,13 +203,20 @@
   }
   async function run() {
     if (!bbox) return;
-    setRunDisabled(true); $('result').hidden = true;
+    if (layers.length >= MAX_LAYERS) { setStatus(`You have ${MAX_LAYERS} saved layers: remove one first.`, 'err'); return; }
+    setRunDisabled(true);
     let date = $('date').value;
     if (date === FETCH) {
       date = await fetchFlow();  // logs in if needed, fetches the scene, returns its date (null if cancelled or failed)
       if (!date) { refreshRunButton(); return; }
     }
     const index = $('index').value, url = executeUrl(index, date);
+    const existing = layers.find((l) => l.url === url);
+    if (existing) {  // the identical request is already on the map
+      selectLayer(existing.id); map.fitBounds(existing.bounds.pad(0.3));
+      setStatus('This exact result is already saved as a layer, so it was selected instead of running it again.', 'ok');
+      refreshRunButton(); return;
+    }
     showRequest(url);
     $('ogc-response').hidden = true;
     setStatus('Sending the WPS Execute request and computing…', 'busy');
@@ -220,8 +227,8 @@
       const out = parseResponse(text);
       const stats = JSON.parse(out.stats.text);
       const secs = ((performance.now() - t0) / 1000).toFixed(1);
-      showResult(out, stats, text);
-      setStatus(`Done in ${secs} s.`, 'ok');
+      addLayer(out, stats, text, url);
+      setStatus(`Done in ${secs} s. Saved as a layer (${layers.length}).`, 'ok');
     } catch (err) {
       setStatus('Error: ' + err.message, 'err');
     } finally {
@@ -229,10 +236,97 @@
     }
   }
   function refreshRunButton() { setRunDisabled(!(bbox && !$('date').disabled)); }
-  function showResult(out, stats, xmlText) {
+  // ---------- saved layers: every result stays on the map until removed ----------
+  const layerById = (id) => layers.find((l) => l.id === id);
+  function restack() { layers.forEach((l) => { if (l.visible) l.overlay.bringToFront(); }); }  // bottom first, so the last ends on top
+  function addLayer(out, stats, xmlText, url) {
     const pv = stats.preview, b = pv.bounds_south_west_north_east;
-    if (overlay) overlay.remove();
-    overlay = L.imageOverlay(local(out.preview.href), [[b[0], b[1]], [b[2], b[3]]], { opacity: parseFloat($('opacity').value), interactive: false }).addTo(map);
+    const bounds = L.latLngBounds([b[0], b[1]], [b[2], b[3]]);
+    const preview = local(out.preview.href);
+    const id = ++layerSeq;
+    layers.push({
+      id, url, stats, bounds, visible: true, opacity: 0.85,
+      name: `${stats.index.toUpperCase()} · ${stats.date} · #${id}`,
+      overlay: L.imageOverlay(preview, bounds, { opacity: 0.85, interactive: false }).addTo(map),
+      tif: local(out.index.href), png: preview,
+      xmlUrl: URL.createObjectURL(new Blob([xmlText], { type: 'text/xml' })),
+    });
+    restack();
+    selectLayer(id);
+    map.fitBounds(bounds.pad(0.3));
+  }
+  function selectLayer(id) {
+    selectedId = id; renderLayers(); renderDetails();
+    const l = layerById(id); if (l) showRequest(l.url, false);
+  }
+  function selectAt(latlng) {  // topmost visible layer under the click
+    for (let k = layers.length - 1; k >= 0; k--) {
+      if (layers[k].visible && layers[k].bounds.contains(latlng)) { selectLayer(layers[k].id); return; }
+    }
+  }
+  function removeLayer(id) {
+    const l = layerById(id); if (!l) return;
+    l.overlay.remove(); URL.revokeObjectURL(l.xmlUrl);
+    layers = layers.filter((x) => x.id !== id);
+    if (selectedId === id) selectedId = layers.length ? layers[layers.length - 1].id : null;
+    renderLayers(); renderDetails();
+  }
+  function moveLayer(id, delta) {  // delta +1 = towards the top of the stack
+    const i = layers.findIndex((l) => l.id === id), k = i + delta;
+    if (i < 0 || k < 0 || k >= layers.length) return;
+    [layers[i], layers[k]] = [layers[k], layers[i]];
+    restack(); renderLayers();
+  }
+  function setVisible(id, on) {
+    const l = layerById(id); if (!l) return;
+    l.visible = on;
+    if (on) { l.overlay.addTo(map); restack(); } else l.overlay.remove();
+    renderLayers();
+  }
+  function renderLayers() {
+    $('layers').hidden = layers.length === 0;
+    $('layer-count').textContent = layers.length ? `(${layers.length})` : '';
+    const ul = $('layer-list'); ul.innerHTML = '';
+    for (let k = layers.length - 1; k >= 0; k--) {  // top of the stack first
+      const l = layers[k], li = document.createElement('li');
+      li.className = 'layer' + (l.id === selectedId ? ' selected' : '') + (l.visible ? '' : ' hidden-layer');
+      li.dataset.id = l.id;
+      const top = document.createElement('div'); top.className = 'layer-top';
+      const eye = document.createElement('input'); eye.type = 'checkbox'; eye.checked = l.visible; eye.title = 'Show or hide this layer';
+      eye.setAttribute('aria-label', `Show ${l.name}`);
+      eye.addEventListener('click', (e) => e.stopPropagation());
+      eye.addEventListener('change', () => setVisible(l.id, eye.checked));
+      const sw = document.createElement('span'); sw.className = 'layer-swatch';
+      sw.style.background = `linear-gradient(to right, ${l.stats.preview.ramp.join(', ')})`;
+      const nm = document.createElement('span'); nm.className = 'layer-name'; nm.textContent = l.name; nm.title = l.name;
+      top.append(eye, sw, nm);
+      const sub = document.createElement('div'); sub.className = 'layer-sub';
+      sub.textContent = `${l.stats.preview.scale === 'absolute' ? 'absolute scale' : 'relative contrast'} · ${fmt(l.stats.min)} to ${fmt(l.stats.max)}`;
+      const tools = document.createElement('div'); tools.className = 'layer-tools';
+      const op = document.createElement('input'); op.type = 'range'; op.min = 0; op.max = 1; op.step = 0.05; op.value = l.opacity;
+      op.title = 'Opacity'; op.setAttribute('aria-label', `Opacity of ${l.name}`);
+      op.addEventListener('click', (e) => e.stopPropagation());
+      op.addEventListener('input', () => { l.opacity = parseFloat(op.value); l.overlay.setOpacity(l.opacity); });
+      const btn = (label, title, fn, disabled) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.textContent = label; b.title = title;
+        b.disabled = !!disabled; b.addEventListener('click', (e) => { e.stopPropagation(); fn(); }); return b;
+      };
+      tools.append(op,
+        btn('Zoom', 'Zoom the map to this layer', () => map.fitBounds(l.bounds.pad(0.3))),
+        btn('▲', 'Move up in the stack', () => moveLayer(l.id, +1), k === layers.length - 1),
+        btn('▼', 'Move down in the stack', () => moveLayer(l.id, -1), k === 0),
+        btn('Rename', 'Rename this layer', () => { const n = window.prompt('Layer name', l.name); if (n && n.trim()) { l.name = n.trim().slice(0, 80); renderLayers(); renderDetails(); } }),
+        btn('Remove', 'Remove this layer from the map', () => removeLayer(l.id)));
+      li.append(top, sub, tools);
+      li.addEventListener('click', () => selectLayer(l.id));
+      ul.append(li);
+    }
+  }
+  function renderDetails() {
+    const l = layerById(selectedId);
+    $('result').hidden = !l;
+    if (!l) return;
+    const stats = l.stats, pv = stats.preview;
     $('legend-bar').style.background = `linear-gradient(to right, ${pv.ramp.join(', ')})`;
     $('lg-min').textContent = fmt(pv.vmin); $('lg-max').textContent = fmt(pv.vmax);
     const absolute = pv.scale === 'absolute', toa = stats.radiometry === 'toa';
@@ -242,6 +336,7 @@
       + (toa ? '(Values are top-of-atmosphere reflectance indices, without atmospheric correction.)'
              : '(Values are computed on at-sensor radiance, so standard thresholds such as NDWI > 0 for water do not strictly apply.)');
     const t = $('stats'); t.innerHTML = '';
+    row(t, 'Layer', l.name);
     row(t, 'Index', `${stats.index.toUpperCase()}  ${stats.formula}`);
     row(t, 'Scene', stats.scene_id);
     row(t, 'Date', stats.date);
@@ -250,18 +345,18 @@
     row(t, 'Valid pixels', `${fmt(stats.valid_fraction * 100, 1)} %`);
     row(t, 'Quantity', (toa ? 'top-of-atmosphere reflectance' : 'at-sensor radiance') + ' (no atmospheric correction)');
     row(t, 'Colour scale', absolute ? 'absolute, fixed -1 to +1' : 'relative, stretched to this result');
-    resultUrls.forEach((u) => URL.revokeObjectURL(u));
-    const xmlUrl = URL.createObjectURL(new Blob([xmlText], { type: 'text/xml' })); resultUrls = [xmlUrl];
     const links = $('links'); links.innerHTML = '';
-    [['Download GeoTIFF (float32 COG)', local(out.index.href), true], ['Preview PNG', local(out.preview.href), false],
-     ['WPS response (XML)', xmlUrl, false]].forEach(([label, href, dl], i) => {
+    [['Download GeoTIFF (float32 COG)', l.tif, true], ['Preview PNG', l.png, false], ['WPS response (XML)', l.xmlUrl, false]].forEach(([label, href, dl], i) => {
       if (i) links.append(' · ');
       const a = document.createElement('a'); a.href = href; a.textContent = label; a.target = '_blank'; a.rel = 'noopener';
       if (dl) a.download = `${stats.index}_${stats.date}.tif`;
       links.append(a);
     });
-    $('result').hidden = false;
-    map.fitBounds(L.latLngBounds([b[0], b[1]], [b[2], b[3]]).pad(0.3));
+  }
+  function removeAllLayers() {
+    if (!layers.length || !window.confirm(`Remove all ${layers.length} saved layers from the map?`)) return;
+    layers.forEach((l) => { l.overlay.remove(); URL.revokeObjectURL(l.xmlUrl); });
+    layers = []; selectedId = null; renderLayers(); renderDetails();
   }
 
   // ---------- Bhoonidhi account: log in (with the emailed code) and fetch a scene ----------
@@ -462,7 +557,7 @@
     $('login').addEventListener('cancel', () => closeLogin(false));  // Escape
     $('account-btn').addEventListener('click', () => (account.logged_in ? logout() : (loginDone = null, openLogin())));
     await loadAccount();
-    $('opacity').addEventListener('input', () => { if (overlay) overlay.setOpacity(parseFloat($('opacity').value)); });
+    $('layers-clear').addEventListener('click', removeAllLayers);
 
     // ?demo=1 (optionally &index=ndwi&date=YYYY-MM-DD) pre-fills the demo area and runs it, for screenshots and rehearsals
     const q = new URLSearchParams(location.search);

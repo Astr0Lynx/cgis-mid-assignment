@@ -10,3 +10,9 @@ cd tests/e2e && npm install && node login_flow.js   # terminal 2   (BASE=http://
 Checks: an uncovered box offers a fetch; Run opens the login dialog; the emailed-code step (wrong code rejected, right code
 accepted); the pending Run resumes with a progress bar and shows the result; the password is gone from the page; logout; a
 second visitor reuses the fetched scene without logging in; logging in by choice starts nothing; cancelling fetches nothing.
+
+## Saved layers
+`node layers.js` (against any running instance with the prepared scenes, `BASE=http://127.0.0.1:5000`; run it from
+`tests/e2e`) checks the saved-layers list: each run is kept, selecting a layer shows its own details and download links,
+visibility, per-layer opacity, reordering, renaming, duplicate requests, "Clear" keeping the layers, map-click selection,
+removing one and removing all.

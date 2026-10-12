@@ -66,12 +66,20 @@
     <progress id="progress" max="100" value="0" hidden></progress>
     <p id="status" class="status" role="status"></p>
 
+    <section id="layers" hidden>
+      <div class="layers-head">
+        <h2>Saved layers <span id="layer-count"></span></h2>
+        <button id="layers-clear" class="btn ghost small" type="button">Remove all</button>
+      </div>
+      <p class="meta">Every result stays on the map. Click a layer to select it (or click it on the map); the details and downloads below are for the selected layer.</p>
+      <ul id="layer-list"></ul>
+    </section>
+
     <section id="result" hidden>
-      <h2>Result</h2>
+      <h2>Selected layer</h2>
       <div id="legend"><div id="legend-bar"></div><div class="legend-labels"><span id="lg-min"></span><span id="lg-max"></span></div></div>
       <p class="meta" id="legend-note">Colours are a stretch between the 2nd and 98th percentile of this result: they show relative
         contrast, not absolute values (indices are computed on at-sensor radiance).</p>
-      <label class="slider">Opacity <input id="opacity" type="range" min="0" max="1" step="0.05" value="0.85"></label>
       <table id="stats"></table>
       <p class="links" id="links"></p>
     </section>

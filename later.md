@@ -21,6 +21,8 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 
 - DONE (2026-10-12): the interface offers absolute colour scale (-1..+1, `colour_scale=absolute`) and a reflectance choice; `toa` switches on by itself once `esun_liss3.json` has a cited source and all four band values.
 
+- DONE (2026-10-12): saved layers on the map page (keep every result, select, show/hide, opacity, reorder, rename, remove, per-layer downloads). Not done: reading pixel values under the cursor (needs a small server endpoint reading the stored COG).
+
 ## 2. Expand beyond NDVI  (STATUS: DONE for NDVI/NDWI/MNDWI/NDBI via process `spectral-index`)
 - DONE: registry in `app/indices.py`, process `spectral-index`, tests incl. a real-data lake check. Decided NOT to wait for TOA.
 - STILL TO DO: SAVI (only valid on reflectance; add once `radiometry=toa` is unblocked), then document that thresholds become usable.

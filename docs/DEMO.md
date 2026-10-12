@@ -38,7 +38,8 @@ just one client of it."
    (Hussain Sagar) is the darkest feature (no vegetation), parks and gardens are green; legend, statistics, download links.
 4. Switch the date to `2026-05-23` and run again: the pattern changes (the 2 Oct scene, after the monsoon, is greener).
    Say: "the two scenes come from different satellites, so compare patterns, not absolute numbers."
-5. Switch the index to **NDWI** and run: now the lake is the strongest feature.
+5. Switch the index to **NDWI** and run: now the lake is the strongest feature. The NDVI result is still there as a
+   **saved layer**: untick or reorder layers, change a layer's opacity, click a layer to see its own statistics and downloads.
 6. In **OGC operations** press **GetCapabilities** (what the service offers), then **DescribeProcess** (pick `spectral-index`: its inputs and outputs), then **Execute** (the request behind the result). Each shows the exact request and the reply: "This is the exact OGC request the page sent. Any WPS client can send it." "Copy as curl" gives the same call for a terminal.
 7. Toggle **Dark mode**. Then draw a box outside every outline and show the page refusing it with an explanation.
 8. Say the caveat out loud: "The colours are a stretch of this result, so they show relative contrast. Values are
