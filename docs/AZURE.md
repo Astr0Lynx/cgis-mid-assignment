@@ -40,8 +40,10 @@ ssh -i path/to/key.pem azureuser@<host name> "mkdir cgis-mid-assignment && tar -
 ```
 (To update later, send a new `app.tgz` the same way and run the `up -d --build` line again.)
 
-Behind some campus networks the VM is unreachable (SSH, 80 and 443 all time out); try a phone hotspot, and remember that the
-SSH firewall rule then needs to allow your new address.
+From the IIIT-H campus network the website (443) loads fine, but SSH to the VM timed out (checked 2026-10-12) while GitHub's SSH
+worked, so it is not a general SSH block; the cause was not pinned down (possibly the SSH firewall rule versus the campus
+network's outgoing addresses). A phone hotspot worked for SSH once the rule allowed the address. Remember that a "My IP
+address" SSH rule only matches the network it was set from.
 
 ## 5. Start it
 ```bash

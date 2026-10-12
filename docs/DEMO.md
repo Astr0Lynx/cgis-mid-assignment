@@ -5,9 +5,9 @@ About 10 minutes. Everything is a real request to the public service; nothing is
 
 ## Before you start (10 minutes earlier)
 The service runs on an Azure VM with HTTPS: **https://bhoonidhi-wps-guntesh.malaysiawest.cloudapp.azure.com/** . Nothing needs starting on your laptop.
-1. **Use a network that can reach it.** The IIIT-H campus Wi-Fi blocks this address range (SSH, 80 and 443 time out; checked
-   from campus 2026-10-11), while a phone hotspot works. If you present on campus Wi-Fi, switch to a hotspot, or use the
-   ngrok fallback below. Tell the audience if it matters.
+1. **Network.** The website loads over HTTPS from the IIIT-H campus network (checked 2026-10-12) and from a phone hotspot.
+   Only SSH to the VM (administration, not the demo) was unreliable from campus. Check the address loads from the network
+   you will present on; if it does not, use a hotspot or the ngrok fallback below.
 2. In the Azure portal check the VM `cgis-mid` shows **Running** (it keeps running and billing until stopped; start it in the
    portal if it was stopped, and give it two minutes). Open the address above in the browser: the map page should load with a
    padlock and a "Bhoonidhi account: not logged in" line.
@@ -126,7 +126,7 @@ EPSG:32643/32644; style it as singleband pseudocolor. Zoom to Hussain Sagar (17.
 ## If something goes wrong
 | Symptom | Do this |
 |---|---|
-| The address times out or the page never loads | you are on a network that blocks it (campus Wi-Fi): use a phone hotspot; otherwise check in the portal that the VM is Running |
+| The address times out or the page never loads | try another network such as a phone hotspot; check in the portal that the VM is Running |
 | The page shows a grey map with no streets | the browser cannot reach OpenStreetMap tiles (no internet); the WPS still works, use the terminal steps |
 | The page says it cannot reach the service | on the VM: `cd cgis-mid-assignment && sudo docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d` (SSH in with the key; see docs/AZURE.md) |
 | Browser certificate warning | the VM's address changed or Caddy could not renew; check `sudo docker compose -f deploy/docker-compose.yml logs caddy` |
