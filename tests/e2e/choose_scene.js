@@ -45,12 +45,22 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     await p.type('#login-otp', '123456'); await p.click('#login-go');
     await p.waitForFunction(() => document.querySelectorAll('#date optgroup option').length > 0, { timeout: 20000 });
     const opts = await p.$$eval('#date optgroup option', (o) => o.map((x) => ({ t: x.textContent, v: x.value, d: x.disabled })));
-    ok('5 after login the search lists the scenes by date', opts.length === 3, JSON.stringify(opts.map((o) => o.t.slice(0, 40))));
+    ok('5 after login the search lists the scenes by date', opts.length === 4, JSON.stringify(opts.map((o) => o.t.slice(0, 40))));
     ok('6 newest first, with the satellite and a coverage mark', /^2026-10-01 · Resourcesat-2 · .*covers the area/.test(opts[0].t), opts[0].t);
     ok('7 a scene whose true image misses the area is shown but cannot be chosen', opts.some((o) => /misses the area/.test(o.t) && o.d), opts.map((o) => o.d).join());
     ok('8 the first usable scene is preselected', (await p.$eval('#date', (s) => s.value)).includes('2026-10-01'));
-    ok('9 the note says how many were found', /3 scenes/.test(await p.$eval('#scene-note', (e) => e.textContent)), await p.$eval('#scene-note', (e) => e.textContent));
+    ok('9 the note says how many were found', /4 scenes/.test(await p.$eval('#scene-note', (e) => e.textContent)), await p.$eval('#scene-note', (e) => e.textContent));
     ok('10 logging in because of the search did not start a run', await p.$eval('#layers', (e) => e.hidden));
+
+    // a scene the portal refuses ("permission denied") is explained, marked in the list and skipped
+    const denied = opts.find((o) => o.t.startsWith('2026-09-25'));
+    await p.select('#date', denied.v);
+    await p.click('#run');
+    await p.waitForFunction(() => /REFUSED this download/.test(document.getElementById('status').textContent), { timeout: 60000 });
+    ok('10a a refused download says so instead of "no file"', !/no file at/.test(await p.$eval('#status', (e) => e.textContent)));
+    const after = await p.$$eval('#date optgroup option', (o) => o.map((x) => ({ t: x.textContent, v: x.value, d: x.disabled })));
+    ok('10b the refused scene is marked in the list and cannot be chosen again', after.some((o) => o.t.startsWith('2026-09-25') && o.d && /refused by Bhoonidhi/.test(o.t)), after.map((o) => o.t.slice(0, 11) + (o.d ? '(x)' : '')).join(' '));
+    ok('10c the selection moved on to a usable scene', !after.find((o) => o.v === denied.v).d === false && (await p.$eval('#date', (e) => !e.selectedOptions[0].disabled)));
 
     const older = opts.find((o) => o.t.startsWith('2026-09-15'));
     await p.select('#date', older.v);

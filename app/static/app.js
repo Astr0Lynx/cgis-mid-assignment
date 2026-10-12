@@ -209,8 +209,12 @@
     let date = $('date').value;
     if (date === FETCH || date.startsWith(FETCH + '|')) {
       const [, id, day] = date.split('|');
+      const chosen = $('date').value;
       date = await fetchFlow(id ? { id, date: day } : null);  // logs in if needed, fetches the scene, returns its date (null if cancelled or failed)
-      if (!date) { refreshRunButton(); return; }
+      if (!date) {
+        if (id && /REFUSED this download/.test($('status').textContent)) markRefused(chosen);
+        refreshRunButton(); return;
+      }
     }
     const index = $('index').value, url = executeUrl(index, date);
     const existing = layers.find((l) => l.url === url);
@@ -236,6 +240,14 @@
     } finally {
       refreshRunButton();
     }
+  }
+  // Bhoonidhi answered "permission denied" for this scene: show that in the list and move to another scene
+  function markRefused(value) {
+    const sel = $('date'), o = Array.from(sel.options).find((x) => x.value === value);
+    if (!o) return;
+    o.disabled = true; o.textContent += ' · ✗ refused by Bhoonidhi for your account';
+    const next = Array.from(sel.options).find((x) => !x.disabled);
+    if (next) sel.value = next.value;
   }
   function refreshRunButton() { setRunDisabled(!(bbox && !$('date').disabled)); }
   // ---------- saved layers: every result stays on the map until removed ----------
@@ -391,11 +403,12 @@
   // ---------- choosing a date: list the scenes Bhoonidhi has for the drawn area ----------
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   function initSceneDates() {
-    const today = new Date(), from = new Date(today); from.setMonth(from.getMonth() - 6);
+    const serverToday = () => { const [y, m, d] = (info && info.today ? info.today : isoDay(new Date())).split('-').map(Number); return new Date(y, m - 1, d); };
+    const today = serverToday(), from = new Date(today); from.setMonth(from.getMonth() - 6);
     $('scene-to').max = $('scene-from').max = isoDay(today);
     $('scene-to').value = isoDay(today); $('scene-from').value = isoDay(from);
     document.querySelectorAll('#scene-search .presets button').forEach((b) => b.addEventListener('click', () => {
-      const months = parseInt(b.dataset.months, 10), t = new Date(), f = new Date(t);
+      const months = parseInt(b.dataset.months, 10), t = serverToday(), f = new Date(t);
       if (months) f.setMonth(f.getMonth() - months); else f.setTime(new Date('2011-01-01T12:00:00').getTime());
       $('scene-to').value = isoDay(t); $('scene-from').value = isoDay(f);
     }));

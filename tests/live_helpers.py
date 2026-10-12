@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import rasterio
 import requests
+from app.bhoonidhi_client import date_from_id
 from rasterio.transform import from_origin
 from rasterio.warp import transform
 
@@ -102,6 +103,7 @@ class FakeBhoonidhi:
         self.portal_sat, self.portal_sensor = "RS2", "LIS3"  # the portal's own codes for the scenes it lists
         self.portal_selections = {"ResourceSat-2_LISS3_L2", "ResourceSat-2_LISS3_L2-Archives"}  # names it recognises
         self.portal_search_bodies = []
+        self.truncate_at = None            # e.g. 100: searches with more matches than this return only the oldest ones
         self.portal_denied = False         # True: the portal's data path answers 404 with its 'permission_denied' page
         self.portal_search_status = None   # e.g. 429: the portal search refuses every request
         self.filter_dates = False   # True: searches only return scenes inside the requested datetime range
@@ -161,11 +163,12 @@ class FakeBhoonidhi:
             if self.filter_dates and window:  # opt-in: honour the requested range, like the real search does
                 from datetime import date as _date
 
-                from app.bhoonidhi_client import date_from_id
 
                 lo, hi = (_date.fromisoformat(part[:10]) for part in window.split("/"))
                 features = [f for f in features if (d := date_from_id(f["id"])) is not None and lo <= d <= hi]
                 self.search_windows.append((lo, hi))
+            if self.truncate_at and len(features) > self.truncate_at:  # the real search cuts an over-full answer off, oldest first
+                features = sorted(features, key=lambda f: date_from_id(f["id"]))[: self.truncate_at]
             if self.filter_dates and not features:  # what the real API sends when nothing matches (seen in the server log)
                 return FakeResponse(404, {"ErrorCode": "404", "Description": "NO RESULTS FOUND",
                                           "Action": "No results found. Please modify the inputs and try again."})

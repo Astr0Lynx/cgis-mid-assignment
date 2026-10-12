@@ -83,3 +83,9 @@ def test_a_scene_without_corner_metadata_is_still_listed_by_its_raster_extent(cl
     assert len(features) == 1
     ring = features[0]["geometry"]["coordinates"][0]
     assert max(p[0] for p in ring) - min(p[0] for p in ring) < 0.1  # the 7 km raster, not a made-up footprint
+
+
+def test_info_tells_the_page_what_day_it_is(client):
+    from datetime import datetime
+
+    assert client.get("/api/info").get_json()["today"] == datetime.now().date().isoformat()

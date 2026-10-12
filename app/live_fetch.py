@@ -44,9 +44,25 @@ def candidates(bbox, wanted: date | None, client: BhoonidhiClient) -> list[Item]
     else:
         end = date.today()
         start = end - timedelta(days=LOOKBACK_DAYS)
-    found = client.search(bbox, start, end)
+    found = search_complete(client, bbox, start, end)
     usable = [i for i in found if i.online is not False and footprint_contains_bbox(i.geometry, bbox)]
     return sorted(usable, key=lambda i: i.date or date.min, reverse=True)
+
+
+PAGE = 100  # what one Bhoonidhi search returns at most
+
+
+def search_complete(client, bbox, start: date, end: date, depth: int = 0) -> list[Item]:
+    """Every scene in [start, end]: a search that fills its whole page is split in two (newer half first), recursively.
+
+    One Bhoonidhi search returns at most PAGE scenes, and when there are more it silently cuts the answer off (in practice the
+    newest ones were missing from a year-long search). Splitting until each answer is smaller than a page guarantees none are lost.
+    """
+    found = client.search(bbox, start, end)
+    if len(found) < PAGE or start >= end or depth >= 12:
+        return found
+    middle = start + (end - start) // 2
+    return search_complete(client, bbox, middle + timedelta(days=1), end, depth + 1) + search_complete(client, bbox, start, middle, depth + 1)
 
 
 MAX_PRECHECKS = 6  # candidates whose true footprint is read before any download
@@ -98,7 +114,7 @@ def list_scenes(client, bbox, start: date, end: date, max_checks: int = 10) -> d
     window_end = end
     while window_end >= start:
         window_start = max(start, window_end - timedelta(days=WINDOW_DAYS - 1))
-        found = client.search(bbox, window_start, window_end)
+        found = search_complete(client, bbox, window_start, window_end)
         usable += [i for i in found if i.online is not False and footprint_contains_bbox(i.geometry, bbox)]
         window_end = window_start - timedelta(days=1)
         if len(usable) >= LIST_LIMIT:

@@ -161,3 +161,43 @@ def test_a_scene_returned_by_several_searches_is_listed_once(env):
     login(c)                      # this fake ignores the date range, so every year-long window returns the same scenes
     got = listing(c, start="2011-01-01", end="2026-10-12").get_json()["scenes"]
     assert sorted(s["id"] for s in got) == sorted([MISSES, SCENE, OLDER])
+
+
+# ---- a full page of results must not hide the newest scenes ---------------------------------------------------------------------
+def many_scenes(n_days, step=2):
+    from datetime import date, timedelta
+
+    months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    out, day = [], date(2025, 10, 13)
+    for k in range(0, n_days, step):
+        d = day + timedelta(days=k)
+        out.append(feature(f"R2{d.day:02d}{months[d.month - 1]}{d.year}0782460099000{k % 10}60PSANSTUC00GTDF"))
+    return out
+
+
+def test_a_year_with_more_scenes_than_one_search_returns_still_lists_the_newest(env):
+    c, api, _ = env
+    api.features = many_scenes(364, step=2)           # 182 scenes in the year: more than one page of 100
+    api.filter_dates = True
+    api.truncate_at = 100                              # the real search cuts an over-full answer off, keeping the OLDEST
+    login(c)
+    got = listing(c, start="2025-10-13", end="2026-10-12").get_json()
+    dates = [s["date"] for s in got["scenes"]]
+    assert dates == sorted(dates, reverse=True) and len(dates) == 40 and got["more"] is True
+    assert dates[0] >= "2026-10-08"                    # the newest scenes are there, not a list that stops months earlier
+    searches = api.search_windows
+    assert len(searches) > 1 and all((hi - lo).days < 364 for lo, hi in searches[1:])   # the full page was split
+
+
+def test_the_newest_scene_fetch_also_survives_a_full_page(env):
+    from app import live_fetch
+
+    c, api, _ = env
+    api.features = many_scenes(364, step=1)           # a scene a day for a year
+    api.filter_dates = True
+    api.truncate_at = 100
+    login(c)
+    items = live_fetch.search_complete(webauth.store._sessions[next(iter(webauth.store._sessions))].client,
+                                       (77.49, 17.49, 77.51, 17.51), __import__("datetime").date(2025, 10, 13),
+                                       __import__("datetime").date(2026, 10, 12))
+    assert len(items) == 364

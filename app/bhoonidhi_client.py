@@ -213,6 +213,8 @@ class BhoonidhiClient:
 
     # ---- search --------------------------------------------------------------------------------------------
 
+    PAGE = 100  # scenes in one search answer; a full page means the answer may be incomplete
+
     def search(self, bbox, start: date | None = None, end: date | None = None,
                collections=LISS3_COLLECTIONS, limit: int = 100) -> list[Item]:
         """Online LISS-III scenes intersecting bbox (minx, miny, maxx, maxy in lon/lat), one page of results."""
@@ -250,6 +252,8 @@ class BhoonidhiClient:
             online = props.get("Online")
             items.append(Item(id=f["id"], collection=f.get("collection", ""), date=when or date_from_id(f["id"]),
                               geometry=f.get("geometry"), online=None if online is None else online == "Y"))
+        LOGGER.info("search %s..%s returned %d scene(s)%s", start, end, len(items),
+                    f": the page of {limit} is FULL, so older or newer scenes may have been cut off" if len(items) >= limit else "")
         return items
 
     def _scrub(self, text: str) -> str:

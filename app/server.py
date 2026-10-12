@@ -185,6 +185,7 @@ def api_info():
                     for i in INDICES.values()],
         "max_pixels": MAX_PIXELS, "resolution_m": 24, "radiometry": "radiance",
         "toa_available": toa_available(),
+        "today": datetime.now().date().isoformat(),
     })
 
 
