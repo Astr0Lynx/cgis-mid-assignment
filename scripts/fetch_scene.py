@@ -43,6 +43,9 @@ def main() -> int:
     ap.add_argument("--probe-portal-download", action="store_true",
                     help="log in to the portal itself, then ask its own data path (what the unofficial client uses) for the scene; "
                          "reads only the first bytes, downloads nothing")
+    ap.add_argument("--probe-variants", action="store_true",
+                    help="with --probe-portal-download: if the portal answers 404, also try nearby directories (neighbouring months, "
+                         "other satellite codes); reads only the first bytes, downloads nothing")
     ap.add_argument("--download-auth", choices=DOWNLOAD_AUTH_STYLES, default=None,
                     help="how to download: 'portal' (works; asks for an emailed one-time code), or an official-API form. "
                          "Default: $BHOONIDHI_DOWNLOAD_AUTH, else bearer")
@@ -118,6 +121,13 @@ def main() -> int:
                       f"  location={r['location']}\n      {r['starts_with']}")
             print("RESULT: set BHOONIDHI_DOWNLOAD_AUTH=portal to use it." if any(r["status"] == 200 for r in results)
                   else "RESULT: not accepted; paste this output.")
+            if args.probe_variants and record and not any(r["status"] == 200 for r in results):
+                print("Trying nearby directories (nothing is downloaded) ...")
+                found = client.probe_portal_variants(options[0], record)
+                for r in found:
+                    print(f"  {r['status']}  {r['path']}  {r['starts_with'][:60]}")
+                print("VARIANT FOUND: " + next(r["path"] for r in found if r["status"] == 200) if any(r["status"] == 200 for r in found)
+                      else "No nearby directory has the file either; paste this output.")
             return 0
         if args.probe_download_auth:
             options = live_fetch.candidates(bbox, wanted, client)

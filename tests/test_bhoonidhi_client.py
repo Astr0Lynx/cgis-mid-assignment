@@ -544,3 +544,22 @@ def test_a_portal_404_for_a_scene_the_portal_does_not_list_says_the_address_was_
     api.portal_paths = {"/bhoonidhi/data/RS2/3/1999/JAN/elsewhere.zip"}
     with pytest.raises(BhoonidhiError, match="did not list this scene, so the address was inferred"):
         portal_client(api).download_scene(item(), tmp_path / "data", bbox=BBOX)
+
+
+def test_a_portal_404_repeats_what_the_portal_replied(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_paths = {"/bhoonidhi/data/RS2/3/1999/JAN/elsewhere.zip"}
+    with pytest.raises(BhoonidhiError) as e:
+        portal_client(api).download_scene(item(), tmp_path / "data", bbox=BBOX)
+    assert "The portal replied:" in str(e.value)
+
+
+def test_the_variant_probe_finds_a_file_stored_in_a_neighbouring_month_without_downloading_it(tmp_path):
+    api = FakeBhoonidhi(archives={SCENE: make_zip(tmp_path, SCENE)})
+    api.portal_paths = {f"/bhoonidhi/data/RS2/3/2026/APR/{SCENE}.zip"}      # stored a month before the acquisition month
+    client = portal_client(api)
+    client.portal_login()
+    record = client.find_portal_record(item(), BBOX)
+    found = client.probe_portal_variants(item(), record)
+    assert found[-1]["status"] == 200 and found[-1]["path"].endswith(f"/2026/APR/{SCENE}.zip")
+    assert any(r["status"] == 404 and "/2026/MAY/" in r["path"] for r in found)   # the recorded month was tried first

@@ -513,6 +513,44 @@ class BhoonidhiClient:
                 break
         return results
 
+    def probe_portal_variants(self, item: Item, record: dict) -> list[dict]:
+        """Diagnostic for a portal 404: ask for the same file in nearby directories (months -3..+3, other satellite codes).
+
+        Reads only the first bytes of each answer and downloads nothing. Returns every address that answered, with its status.
+        """
+        satellite, sensor = str(record.get("SATELLITE") or ""), str(record.get("SENSOR") or "")
+        name = str(record.get("FILENAME") or record.get("ID") or "")
+        code = PORTAL_SENSOR_CODES.get((satellite, sensor), sensor)
+        parts = str(record.get("DIRPATH") or "").split("/")[-4:][:2]
+        try:
+            year, month = int(parts[0]), MONTHS.index(parts[1]) + 1
+        except (ValueError, IndexError):
+            return []
+        sats = [satellite] + [s for s in dict.fromkeys(("RS2", "R2A", "R2", item.id[:2])) if s and s != satellite]
+        results, seen = [], set()
+        for offset in (0, -1, 1, -2, 2, -3, 3):
+            index = (year * 12 + month - 1) + offset
+            y, m = divmod(index, 12)
+            for sat in sats:
+                url = f"{self.portal_url}/bhoonidhi/data/{sat}/{code}/{y}/{MONTHS[m]}/{name}.zip"
+                if url in seen:
+                    continue
+                seen.add(url)
+                r = self._portal_get(url, item, stream=True, timeout=(15, 60), allow_redirects=False)
+                first = b""
+                try:
+                    first = next(iter(r.iter_content(chunk_size=200)), b"")
+                finally:
+                    close = getattr(r, "close", None)
+                    if close:
+                        close()
+                results.append({"path": urlsplit(url).path, "status": r.status_code,
+                                "starts_with": "PK (a zip archive)" if first.startswith(b"PK")
+                                else self._scrub(" ".join(first[:100].decode("latin-1").split()))})
+                if r.status_code == 200:
+                    return results
+        return results
+
     def probe_download_auth(self, item: Item) -> list[dict]:
         """Try each way of presenting the token to /download; stop at the first the server accepts (HTTP 200).
 
@@ -629,8 +667,13 @@ class BhoonidhiClient:
             if r.status_code in RETRY_STATUSES and attempt < len(self.retry_waits):
                 continue
             if r.status_code == 404 and self.download_auth == "portal":
+                try:
+                    said = self._scrub(" ".join(r.text[:240].split()))
+                except Exception:
+                    said = ""
                 raise BhoonidhiError(f"the Bhoonidhi portal has no file at {', '.join(self._tried_portal_paths)} "
-                                     "(the directory layout there may differ from the one assumed)" + self._portal_404_facts())
+                                     "(the directory layout there may differ from the one assumed)"
+                                     + self._portal_404_facts() + (f" The portal replied: {said!r}." if said else ""))
             if r.status_code == 404:
                 raise BhoonidhiError("Bhoonidhi says this product is not available on online storage")
             if r.status_code != 200:
