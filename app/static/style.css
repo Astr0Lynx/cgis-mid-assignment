@@ -84,3 +84,6 @@ pre.reply { max-height: 320px; overflow: auto; white-space: pre; word-break: nor
 #splitter:hover::after, #splitter:focus-visible::after, body.resizing #splitter::after { background: var(--accent); }
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing #map { pointer-events: none; }
+#advanced { margin: 10px 0 0; }
+#advanced label { display: block; margin: 8px 0 0; color: var(--muted); font-size: 12.5px; }
+#advanced select { display: block; width: 100%; margin-top: 3px; font: inherit; padding: 6px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }

@@ -37,7 +37,7 @@ def test_describe_process(client):
     assert r.status_code == 200
     root = ET.fromstring(r.data)
     inputs = [e.find("ows:Identifier", NS).text for e in root.findall(".//Input")]
-    assert inputs == ["bbox", "date", "radiometry"]
+    assert inputs == ["bbox", "date", "radiometry", "colour_scale"]
     assert b"image/tiff; subtype=geotiff" in r.data
 
 
@@ -201,7 +201,7 @@ def test_spectral_index_describes_allowed_indices(client):
     r = client.get("/wps?service=WPS&version=1.0.0&request=DescribeProcess&identifier=spectral-index")
     root = ET.fromstring(r.data)
     inp = {e.find("ows:Identifier", NS).text: e for e in root.findall(".//Input")}
-    assert list(inp) == ["bbox", "index", "date", "radiometry"]
+    assert list(inp) == ["bbox", "index", "date", "radiometry", "colour_scale"]
     assert inp["index"].get("minOccurs") == "1"
     values = [v.text for v in inp["index"].findall(".//ows:Value", NS)]
     assert values == ["ndvi", "ndwi", "mndwi", "ndbi"]

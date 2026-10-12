@@ -19,6 +19,8 @@ Deferred work. Do not forget these; revisit once the NDVI WPS is solid.
 - Keep the radiometry step in one module with a `mode` parameter (`radiance` | `toa`) so the WPS layer does not change. Expose `mode` as an optional WPS input once both exist.
 - Document in the README which one v1 used and the limitation (no atmospheric correction; the priced BOA product is the real surface reflectance).
 
+- DONE (2026-10-12): the interface offers absolute colour scale (-1..+1, `colour_scale=absolute`) and a reflectance choice; `toa` switches on by itself once `esun_liss3.json` has a cited source and all four band values.
+
 ## 2. Expand beyond NDVI  (STATUS: DONE for NDVI/NDWI/MNDWI/NDBI via process `spectral-index`)
 - DONE: registry in `app/indices.py`, process `spectral-index`, tests incl. a real-data lake check. Decided NOT to wait for TOA.
 - STILL TO DO: SAVI (only valid on reflectance; add once `radiometry=toa` is unblocked), then document that thresholds become usable.

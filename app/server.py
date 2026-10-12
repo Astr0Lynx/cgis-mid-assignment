@@ -167,11 +167,13 @@ def api_info():
     """What the page needs to know about the service: the indices it offers and its limits."""
     from app.indices import INDICES
     from app.processes.ndvi import MAX_PIXELS
+    from app.radiometry import toa_available
 
     return jsonify({
         "indices": [{"name": i.name, "title": i.title, "formula": i.formula, "meaning": i.meaning}
                     for i in INDICES.values()],
         "max_pixels": MAX_PIXELS, "resolution_m": 24, "radiometry": "radiance",
+        "toa_available": toa_available(),
     })
 
 

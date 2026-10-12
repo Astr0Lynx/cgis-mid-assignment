@@ -180,7 +180,7 @@
 
   // ---------- running the WPS process ----------
   function executeUrl(index, date) {
-    const di = `bbox=${bbox.s},${bbox.w},${bbox.n},${bbox.e},urn:ogc:def:crs:EPSG::4326;index=${index};date=${date};radiometry=radiance`;
+    const di = `bbox=${bbox.s},${bbox.w},${bbox.n},${bbox.e},urn:ogc:def:crs:EPSG::4326;index=${index};date=${date};radiometry=${$('radiometry').value};colour_scale=${$('colour-scale').value}`;
     return `/wps?service=WPS&version=1.0.0&request=Execute&identifier=spectral-index&DataInputs=${di}`;
   }
   function parseResponse(text) {
@@ -235,6 +235,12 @@
     overlay = L.imageOverlay(local(out.preview.href), [[b[0], b[1]], [b[2], b[3]]], { opacity: parseFloat($('opacity').value), interactive: false }).addTo(map);
     $('legend-bar').style.background = `linear-gradient(to right, ${pv.ramp.join(', ')})`;
     $('lg-min').textContent = fmt(pv.vmin); $('lg-max').textContent = fmt(pv.vmax);
+    const absolute = pv.scale === 'absolute', toa = stats.radiometry === 'toa';
+    $('legend-note').textContent = (absolute
+      ? 'Colours use a fixed scale from -1 to +1, so the same colour means the same value in every run. '
+      : 'Colours are a stretch between the 2nd and 98th percentile of this result: they show relative contrast, not absolute values. ')
+      + (toa ? '(Values are top-of-atmosphere reflectance indices, without atmospheric correction.)'
+             : '(Values are computed on at-sensor radiance, so standard thresholds such as NDWI > 0 for water do not strictly apply.)');
     const t = $('stats'); t.innerHTML = '';
     row(t, 'Index', `${stats.index.toUpperCase()}  ${stats.formula}`);
     row(t, 'Scene', stats.scene_id);
@@ -242,7 +248,8 @@
     row(t, 'Size', `${stats.shape[1]} × ${stats.shape[0]} px at 24 m`);
     row(t, 'Min / mean / max', `${fmt(stats.min)} / ${fmt(stats.mean)} / ${fmt(stats.max)}`);
     row(t, 'Valid pixels', `${fmt(stats.valid_fraction * 100, 1)} %`);
-    row(t, 'Quantity', stats.radiometry + ' (no atmospheric correction)');
+    row(t, 'Quantity', (toa ? 'top-of-atmosphere reflectance' : 'at-sensor radiance') + ' (no atmospheric correction)');
+    row(t, 'Colour scale', absolute ? 'absolute, fixed -1 to +1' : 'relative, stretched to this result');
     resultUrls.forEach((u) => URL.revokeObjectURL(u));
     const xmlUrl = URL.createObjectURL(new Blob([xmlText], { type: 'text/xml' })); resultUrls = [xmlUrl];
     const links = $('links'); links.innerHTML = '';
@@ -351,6 +358,26 @@
     }
   }
 
+  // ---------- advanced options: quantity and colour scale ----------
+  function initAdvanced() {
+    const toa = $('radiometry').querySelector('option[value="toa"]');
+    if (!info.toa_available) {
+      toa.disabled = true; toa.textContent = 'Top-of-atmosphere reflectance (not available yet)';
+      $('toa-note').textContent = 'Reflectance needs the per-band solar irradiance (ESUN) of LISS-III from a citable source. '
+        + 'None is configured on this service, and I do not guess it, so only at-sensor radiance is offered. '
+        + 'The option switches on by itself once the table is filled in (see the README).';
+    } else {
+      $('toa-note').textContent = 'Top-of-atmosphere reflectance uses a configured ESUN table; it has no atmospheric correction.';
+    }
+    const explain = () => {
+      $('scale-note').textContent = $('colour-scale').value === 'absolute'
+        ? 'Fixed -1 to +1 colours. On radiance the numbers are biased (sunlight is stronger in red than NIR), so read them as '
+          + 'indicative; thresholds are only meaningful on reflectance.'
+        : 'Colours are stretched between the 2nd and 98th percentile of the result, so they show contrast within it.';
+    };
+    $('colour-scale').addEventListener('change', explain); explain();
+  }
+
   // ---------- resizable side panel ----------
   function initSplitter() {
     const bar = $('splitter'), app = $('app'), DEFAULT = 360;
@@ -404,6 +431,7 @@
 
     map = L.map('map', { zoomControl: true }).setView([17.4, 78.45], 9);
     initSplitter();
+    initAdvanced();
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap contributors' }).addTo(map);
     applyTheme(document.documentElement.dataset.theme);
     $('theme').addEventListener('click', () => applyTheme(theme === 'dark' ? 'light' : 'dark'));

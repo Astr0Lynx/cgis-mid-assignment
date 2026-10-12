@@ -80,6 +80,9 @@ Endpoint (local): `http://localhost:5000/wps`
 | `DescribeProcess` | yes |
 | `Execute` | yes: KVP (GET) and XML (POST), synchronous and asynchronous (`storeExecuteResponse=true&status=true`) |
 
+### Absolute values and reflectance, in the interface
+The map page's **Advanced** section offers the quantity (`radiometry`) and the colour scale (`colour_scale`). The absolute scale is always available. Reflectance (`toa`) is built end to end and tested, but is **disabled until a cited per-band solar irradiance (ESUN) table is configured** in `app/esun_liss3.json` (a `source` and a value for each of bands 2-5, in mW/cm2/um); the option then switches on by itself, here and in the WPS (`/api/info` reports `toa_available`). I do not enter those numbers from memory, because wrong constants would give plausible but wrong reflectance. On radiance, the absolute scale makes NDVI look nearly flat (values sit near 0), which is why the relative stretch is the default.
+
 ### Interactive map page
 `/` serves a small web page (Leaflet, vendored, no CDN): draw an area on the map (the prepared scenes are outlined),
 pick a scene date and an index, press **Run WPS process**, and the result is overlaid with a legend, statistics, download
@@ -122,6 +125,7 @@ reflectance and is meaningless on radiance; it waits for TOA reflectance).
 | Input | `bbox` | BoundingBox, `EPSG:4326` | OGC axis order for EPSG:4326: `miny,minx,maxy,maxx` (lat,lon). Required. |
 | Input | `date` | Literal (string) | `YYYY-MM-DD`. Optional; default is the newest scene that fully covers the bbox. |
 | Input | `radiometry` | Literal, `radiance` \| `toa` | Optional, default `radiance`. `toa` = top-of-atmosphere reflectance; it is implemented but **refused with an explanatory error until a cited per-band solar-irradiance (ESUN) table is configured** (see section 5). |
+| Input | `colour_scale` | Literal, `stretch` \| `absolute` | Optional, default `stretch`. Affects the **preview image only**, never the GeoTIFF: `stretch` colours the 2nd-98th percentile of this result (relative contrast), `absolute` uses a fixed -1 to +1 scale so the same colour means the same value in every request. |
 | Output | `ndvi` | Complex, `image/tiff; subtype=geotiff` | Float32 Cloud Optimized GeoTIFF, NaN = no data, in the scene's UTM CRS. Returned by reference. |
 | Output | `preview` | Complex, `image/png` | Colour PNG in latitude/longitude for web maps: no-data transparent, colours stretched between the 2nd and 98th percentile (relative contrast only). Its map bounds and legend are in `stats`. |
 | Output | `stats` | Complex, `application/json` | scene id, date, bbox, shape, min/mean/max, valid fraction, radiometry mode, preview bounds and legend. |

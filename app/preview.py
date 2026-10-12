@@ -64,7 +64,11 @@ def png_bytes(rgba: np.ndarray) -> bytes:
             + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
 
 
-def render_preview(data: np.ndarray, transform, crs, index_name: str) -> Preview:
+SCALES = ("stretch", "absolute")
+ABSOLUTE_RANGE = (-1.0, 1.0)  # normalised-difference indices lie in [-1, 1]
+
+
+def render_preview(data: np.ndarray, transform, crs, index_name: str, colour_scale: str = "stretch") -> Preview:
     """Reproject `data` (NaN = no data) to EPSG:4326, colour it, and return the PNG with its map bounds."""
     height, width = data.shape
     left, bottom, right, top = array_bounds(height, width, transform)
@@ -81,7 +85,9 @@ def render_preview(data: np.ndarray, transform, crs, index_name: str) -> Preview
               src_nodata=np.nan, dst_nodata=np.nan)
 
     finite = out[np.isfinite(out)]
-    if finite.size:
+    if colour_scale == "absolute":
+        vmin, vmax = ABSOLUTE_RANGE  # the same colours mean the same values in every request
+    elif finite.size:
         vmin, vmax = (float(v) for v in np.percentile(finite, [2, 98]))
         if vmax - vmin < 1e-6:  # a flat image: widen so the ramp is defined
             vmin, vmax = vmin - 0.05, vmax + 0.05

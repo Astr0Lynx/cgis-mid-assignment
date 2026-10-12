@@ -18,7 +18,7 @@ from pywps.inout.literaltypes import AnyValue
 from app import live_fetch
 from app.bhoonidhi_client import BhoonidhiError
 from app.indices import INDICES
-from app.preview import render_preview
+from app.preview import SCALES, render_preview
 from app.radiometry import MODES, EsunNotConfigured
 from app.scene import ATTRIBUTION, DATA_DIR, find_scenes, write_cog
 
@@ -81,6 +81,15 @@ class IndexProcess(Process):
                     "atmospheric effects."
                 ),
             ),
+            LiteralInput(
+                "colour_scale", "Preview colour scale", data_type="string", min_occurs=0, max_occurs=1,
+                allowed_values=list(SCALES), default="stretch",
+                abstract=(
+                    "stretch (default): colours span the 2nd to 98th percentile of this result, so only relative "
+                    "contrast is shown. absolute: a fixed -1 to +1 scale, the same colours for the same values in "
+                    "every request. Affects the preview image only, never the GeoTIFF values."
+                ),
+            ),
         ]
         if fixed_index is None:
             inputs.insert(1, LiteralInput(
@@ -140,6 +149,7 @@ class IndexProcess(Process):
         if name not in INDICES:  # PyWPS already enforces allowed_values; this guards direct calls
             raise ProcessError(f"Unknown index {name!r}; available: {', '.join(INDICES)}")
         mode = request.inputs["radiometry"][0].data if "radiometry" in request.inputs else "radiance"
+        colour_scale = request.inputs["colour_scale"][0].data if "colour_scale" in request.inputs else "stretch"
 
         wanted = None
         if "date" in request.inputs:
@@ -169,7 +179,7 @@ class IndexProcess(Process):
         valid = clip.data[np.isfinite(clip.data)]
         if valid.size == 0:
             raise ProcessError("The selected scene has no valid pixels in this bbox")
-        pv = render_preview(clip.data, clip.transform, clip.crs, name)
+        pv = render_preview(clip.data, clip.transform, clip.crs, name, colour_scale)
         stats = {
             "index": name,
             "formula": INDICES[name].formula,
@@ -182,7 +192,9 @@ class IndexProcess(Process):
             "radiometry": mode,
             "attribution": ATTRIBUTION,
             "preview": {"bounds_south_west_north_east": list(pv.bounds), "vmin": pv.vmin, "vmax": pv.vmax,
-                        "ramp": pv.ramp, "note": "colours are a per-request percentile stretch: relative contrast only"},
+                        "ramp": pv.ramp, "scale": colour_scale,
+                        "note": ("fixed absolute scale -1..+1" if colour_scale == "absolute"
+                                 else "colours are a per-request percentile stretch: relative contrast only")},
         }
         response.outputs[self.output_id].data = Path(out).read_bytes()
         response.outputs["preview"].data = pv.png

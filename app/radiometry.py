@@ -38,20 +38,30 @@ def parse_band_meta(path: Path) -> dict[str, str]:
     return meta
 
 
-def load_esun(path: Path = ESUN_FILE) -> dict[int, float]:
+def load_esun(path: Path | None = None) -> dict[int, float]:
     """Per-band ESUN (mW/cm2/um), or raise EsunNotConfigured.
 
     The file must name its source and give a number for every band; this refuses to guess, because a
     wrong constant would silently produce plausible-looking but wrong reflectance.
     """
-    data = json.loads(Path(path).read_text())
+    path = Path(path) if path else ESUN_FILE
+    data = json.loads(path.read_text())
     bands = data.get("bands", {})
     if not data.get("source") or any(bands.get(str(b)) is None for b in BAND_NUMBERS.values()):
         raise EsunNotConfigured(
             "TOA reflectance needs the LISS-III solar exo-atmospheric irradiance, ESUN, per band, and none is "
-            f"configured with a cited source. See {Path(path).name}. Use radiometry=radiance."
+            f"configured with a cited source. See {path.name}. Use radiometry=radiance."
         )
     return {int(b): float(v) for b, v in bands.items()}
+
+
+def toa_available() -> bool:
+    """True when a cited ESUN table is configured, i.e. radiometry=toa will work."""
+    try:
+        load_esun()
+        return True
+    except EsunNotConfigured:
+        return False
 
 
 def earth_sun_distance_au(day_of_year: int) -> float:
